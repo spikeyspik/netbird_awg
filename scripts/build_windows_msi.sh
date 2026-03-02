@@ -72,9 +72,11 @@ pick_file "opengl32.dll" "opengl32.dll" "OpenGL32.dll"
 
 artifact_path="$DIST_DIR/netbird_installer_${release_version}_windows_amd64.msi"
 tmp_msi="$NETBIRD_DIR/netbird-installer.msi"
-rm -f "$tmp_msi" "$artifact_path"
+tmp_wxs="$NETBIRD_DIR/client/netbird.awg.msi.wxs"
+rm -f "$tmp_msi" "$artifact_path" "$tmp_wxs"
+trap 'rm -f "$tmp_wxs"' EXIT
 
-run_wix_build() {
+run_wix_build_with_util() {
   NETBIRD_VERSION="$base_core" wix build \
     -arch x64 \
     -d ArchSuffix=amd64 \
@@ -84,10 +86,28 @@ run_wix_build() {
     "$wxs_file"
 }
 
-if ! run_wix_build; then
+run_wix_build_without_util() {
+  # Linux builds often do not have WixToolset.Util.wixext; strip util-only directives.
+  sed \
+    -e '/xmlns:util=/d' \
+    -e '/<util:CloseApplication /d' \
+    "$wxs_file" > "$tmp_wxs"
+
+  NETBIRD_VERSION="$base_core" wix build \
+    -arch x64 \
+    -d ArchSuffix=amd64 \
+    -d ProcessorArchitecture=x64 \
+    -o "$tmp_msi" \
+    "$tmp_wxs"
+}
+
+if ! run_wix_build_with_util; then
   wix extension add WixToolset.Util.wixext >/dev/null 2>&1 || true
   wix extension add -g WixToolset.Util.wixext >/dev/null 2>&1 || true
-  run_wix_build
+  if ! run_wix_build_with_util; then
+    echo "[warn] WixToolset.Util.wixext is unavailable, building MSI without util extension"
+    run_wix_build_without_util
+  fi
 fi
 
 if [[ ! -f "$tmp_msi" ]]; then
