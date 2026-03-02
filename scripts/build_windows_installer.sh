@@ -102,29 +102,54 @@ nsis_src="$NETBIRD_DIR/client/installer.nsis"
 nsis_tmp="$NETBIRD_DIR/client/installer.awg.nsis"
 trap 'rm -f "$nsis_tmp"' EXIT
 
-if [[ "$has_nsis_plugins" == "1" ]]; then
-  {
-    if [[ -d "$nsis_plugins_dir/x86-unicode" ]]; then
-      printf '!addplugindir "%s"\n' "$nsis_plugins_dir/x86-unicode"
-    fi
-    if [[ -d "$nsis_plugins_dir/amd64-unicode" ]]; then
-      printf '!addplugindir "%s"\n' "$nsis_plugins_dir/amd64-unicode"
-    fi
-    cat "$nsis_src"
-  } > "$nsis_tmp"
-else
+to_nsis_path() {
+  local path="$1"
+  if command -v cygpath >/dev/null 2>&1; then
+    cygpath -aw "$path"
+  else
+    echo "$path"
+  fi
+}
+
+write_nsis_without_plugins() {
   sed \
     -e '/EnVar::SetHKLM/d' \
     -e '/EnVar::AddValueEx "path" "\$INSTDIR"/d' \
     -e '/EnVar::DeleteValue "path" "\$INSTDIR"/d' \
     -e 's/ShellExecAsUser::ShellExecAsUser/ExecShell/g' \
     "$nsis_src" > "$nsis_tmp"
-fi
+}
 
-(
-  cd "$NETBIRD_DIR/client"
-  APPVER="$nsis_appver" makensis -V2 "$nsis_tmp"
-)
+write_nsis_with_plugins() {
+  {
+    if [[ -d "$nsis_plugins_dir/x86-unicode" ]]; then
+      printf '!addplugindir "%s"\n' "$(to_nsis_path "$nsis_plugins_dir/x86-unicode")"
+    fi
+    if [[ -d "$nsis_plugins_dir/amd64-unicode" ]]; then
+      printf '!addplugindir "%s"\n' "$(to_nsis_path "$nsis_plugins_dir/amd64-unicode")"
+    fi
+    cat "$nsis_src"
+  } > "$nsis_tmp"
+}
+
+build_nsis() {
+  (
+    cd "$NETBIRD_DIR/client"
+    APPVER="$nsis_appver" makensis -V2 "$nsis_tmp"
+  )
+}
+
+if [[ "$has_nsis_plugins" == "1" ]]; then
+  write_nsis_with_plugins
+  if ! build_nsis; then
+    echo "[warn] NSIS plugin mode failed, retrying without plugins"
+    write_nsis_without_plugins
+    build_nsis
+  fi
+else
+  write_nsis_without_plugins
+  build_nsis
+fi
 
 installer_path="$NETBIRD_DIR/netbird-installer.exe"
 if [[ ! -f "$installer_path" ]]; then
