@@ -80,12 +80,13 @@ jobs:
         with:
           name: snapshot-${{ github.run_number }}-${{ github.sha }}
           path: |
-            ${{ github.workspace }}/workdir/repos/netbird/dist/**
+            ${{ github.workspace }}/workdir/repos/netbird/dist
           if-no-files-found: error
           retention-days: 7
 
   snapshot_windows_installers:
     if: ${{ github.event_name != 'workflow_dispatch' || github.event.inputs.publish_release != 'true' }}
+    needs: snapshot
     runs-on: windows-latest
     env:
       WORKDIR: ${{ github.workspace }}/workdir
@@ -139,6 +140,21 @@ jobs:
       - name: Prepare patched sources
         shell: bash
         run: SKIP_CLONE=1 ./scripts/prepare_sources.sh
+
+      - name: Download snapshot dist artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: snapshot-${{ github.run_number }}-${{ github.sha }}
+          path: ${{ github.workspace }}/workdir/repos/netbird
+
+      - name: Verify dist directory
+        shell: bash
+        run: |
+          if [[ ! -d "$GITHUB_WORKSPACE/workdir/repos/netbird/dist" ]]; then
+            echo "[error] dist directory not found after artifact download"
+            find "$GITHUB_WORKSPACE/workdir/repos/netbird" -maxdepth 5 -type d | sort
+            exit 1
+          fi
 
       - name: Build windows installer (.exe)
         shell: bash
@@ -269,6 +285,15 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GOMAXPROCS: ${{ steps.parallelism.outputs.value }}
 
+      - name: Upload release dist artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-dist-${{ github.run_number }}-${{ github.sha }}
+          path: |
+            ${{ github.workspace }}/workdir/repos/netbird/dist
+          if-no-files-found: error
+          retention-days: 2
+
   release_windows_installers:
     if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.publish_release == 'true' }}
     needs: release
@@ -327,6 +352,21 @@ jobs:
       - name: Prepare patched sources
         shell: bash
         run: SKIP_CLONE=1 ./scripts/prepare_sources.sh
+
+      - name: Download release dist artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: release-dist-${{ github.run_number }}-${{ github.sha }}
+          path: ${{ github.workspace }}/workdir/repos/netbird
+
+      - name: Verify dist directory
+        shell: bash
+        run: |
+          if [[ ! -d "$GITHUB_WORKSPACE/workdir/repos/netbird/dist" ]]; then
+            echo "[error] dist directory not found after artifact download"
+            find "$GITHUB_WORKSPACE/workdir/repos/netbird" -maxdepth 5 -type d | sort
+            exit 1
+          fi
 
       - name: Build windows installer (.exe)
         shell: bash
