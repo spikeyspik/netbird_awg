@@ -77,13 +77,16 @@ rm -f "$tmp_msi" "$artifact_path" "$tmp_wxs"
 trap 'rm -f "$tmp_wxs"' EXIT
 
 run_wix_build_with_util() {
-  NETBIRD_VERSION="$base_core" wix build \
-    -arch x64 \
-    -d ArchSuffix=amd64 \
-    -d ProcessorArchitecture=x64 \
-    -ext WixToolset.Util.wixext \
-    -o "$tmp_msi" \
-    "$wxs_file"
+  (
+    cd "$NETBIRD_DIR"
+    NETBIRD_VERSION="$base_core" wix build \
+      -arch x64 \
+      -d ArchSuffix=amd64 \
+      -d ProcessorArchitecture=x64 \
+      -ext WixToolset.Util.wixext \
+      -o "$tmp_msi" \
+      "client/netbird.wxs"
+  )
 }
 
 run_wix_build_without_util() {
@@ -93,12 +96,15 @@ run_wix_build_without_util() {
     -e '/<util:CloseApplication /d' \
     "$wxs_file" > "$tmp_wxs"
 
-  NETBIRD_VERSION="$base_core" wix build \
-    -arch x64 \
-    -d ArchSuffix=amd64 \
-    -d ProcessorArchitecture=x64 \
-    -o "$tmp_msi" \
-    "$tmp_wxs"
+  (
+    cd "$NETBIRD_DIR"
+    NETBIRD_VERSION="$base_core" wix build \
+      -arch x64 \
+      -d ArchSuffix=amd64 \
+      -d ProcessorArchitecture=x64 \
+      -o "$tmp_msi" \
+      "client/netbird.awg.msi.wxs"
+  )
 }
 
 if ! run_wix_build_with_util; then
