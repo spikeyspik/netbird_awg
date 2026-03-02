@@ -10,6 +10,7 @@ SOURCE_CFG="$NETBIRD_DIR/.goreleaser.yaml"
 SOURCE_UI_CFG="$NETBIRD_DIR/.goreleaser_ui.yaml"
 SOURCE_UI_DARWIN_CFG="$NETBIRD_DIR/.goreleaser_ui_darwin.yaml"
 TARGET_CFG="$NETBIRD_DIR/.goreleaser.awg.yaml"
+TARGET_NFPM_CFG="$NETBIRD_DIR/.goreleaser.awg.nfpm.yaml"
 TARGET_UI_DARWIN_CFG="$NETBIRD_DIR/.goreleaser_ui_darwin.awg.yaml"
 
 if [[ ! -f "$SOURCE_CFG" ]]; then
@@ -27,7 +28,7 @@ if [[ ! -f "$SOURCE_UI_DARWIN_CFG" ]]; then
   exit 1
 fi
 
-python3 - "$SOURCE_CFG" "$SOURCE_UI_CFG" "$TARGET_CFG" <<'PY'
+python3 - "$SOURCE_CFG" "$SOURCE_UI_CFG" "$TARGET_CFG" "$TARGET_NFPM_CFG" <<'PY'
 from pathlib import Path
 import re
 import sys
@@ -35,7 +36,8 @@ import sys
 root_src = Path(sys.argv[1]).read_text(encoding="utf-8", errors="surrogateescape").splitlines(keepends=True)
 ui_src = Path(sys.argv[2]).read_text(encoding="utf-8", errors="surrogateescape").splitlines(keepends=True)
 
-target_path = Path(sys.argv[3])
+target_main_path = Path(sys.argv[3])
+target_nfpm_path = Path(sys.argv[4])
 
 root_build_ids = {"netbird"}
 ui_build_ids = {"netbird-ui-windows-amd64"}
@@ -328,15 +330,30 @@ def ensure_release_overwrite(block_lines):
     return out
 
 
-def ensure_nfpms_version_template(item_lines):
-    version_line = "    version_template: \"{{ .Env.NETBIRD_PACKAGE_VERSION }}\"\n"
-    out = [item_lines[0]]
-    out.append(version_line)
-    for line in item_lines[1:]:
-        if re.match(r"^    version_template:\s*", line):
-            continue
-        out.append(line)
-    return out
+def package_snapshot_block():
+    return [
+        "snapshot:\n",
+        "  version_template: \"{{ .Env.NETBIRD_PACKAGE_VERSION }}\"\n",
+    ]
+
+
+def netbird_archlinux_nfpms_block():
+    return [
+        "nfpms:\n",
+        "  - maintainer: Netbird <dev@netbird.io>\n",
+        "    description: Netbird client.\n",
+        "    homepage: https://netbird.io/\n",
+        "    id: netbird-archlinux\n",
+        "    bindir: /usr/bin\n",
+        "    builds:\n",
+        "      - netbird\n",
+        "    formats:\n",
+        "      - archlinux\n",
+        "\n",
+        "    scripts:\n",
+        "      postinstall: \"release_files/post_install.sh\"\n",
+        "      preremove: \"release_files/pre_remove.sh\"\n",
+    ]
 
 
 root_sections = split_sections(root_src)
@@ -352,7 +369,7 @@ merged_archives = netbird_binary_archives_block()
 root_nfpms = filter_block_by_build_refs(root_sections.get("nfpms", []), root_build_ids)
 ui_nfpms = []
 merged_nfpms = merge_list_blocks(root_nfpms, ui_nfpms)
-merged_nfpms = map_items(merged_nfpms, ensure_nfpms_version_template)
+merged_nfpms = merge_list_blocks(merged_nfpms, netbird_archlinux_nfpms_block())
 
 universal_binaries = filter_block_by_ids(root_sections.get("universal_binaries", []), allowed_universal_ids)
 
@@ -367,19 +384,41 @@ sections_in_order = [
     ensure_release_overwrite(root_sections.get("release", [])),
 ]
 
-out = []
+out_main = []
 for block in sections_in_order:
     norm = normalize_block(block)
     if not norm:
         continue
-    out.extend(norm)
-    if out and out[-1].strip() != "":
-        out.append("\n")
+    out_main.extend(norm)
+    if out_main and out_main[-1].strip() != "":
+        out_main.append("\n")
 
-if out and out[-1].strip() == "":
-    out.pop()
+if out_main and out_main[-1].strip() == "":
+    out_main.pop()
 
-target_path.write_text("".join(out), encoding="utf-8", errors="surrogateescape")
+target_main_path.write_text("".join(out_main), encoding="utf-8", errors="surrogateescape")
+
+sections_nfpm = [
+    root_sections.get("version", []),
+    root_sections.get("project_name", []),
+    root_builds,
+    merged_nfpms,
+    package_snapshot_block(),
+]
+
+out_nfpm = []
+for block in sections_nfpm:
+    norm = normalize_block(block)
+    if not norm:
+        continue
+    out_nfpm.extend(norm)
+    if out_nfpm and out_nfpm[-1].strip() != "":
+        out_nfpm.append("\n")
+
+if out_nfpm and out_nfpm[-1].strip() == "":
+    out_nfpm.pop()
+
+target_nfpm_path.write_text("".join(out_nfpm), encoding="utf-8", errors="surrogateescape")
 PY
 
 python3 - "$SOURCE_UI_DARWIN_CFG" "$TARGET_UI_DARWIN_CFG" <<'PY'
@@ -528,9 +567,10 @@ dst.write_text("".join(out), encoding="utf-8", errors="surrogateescape")
 PY
 
 # Force AWG version suffix in binaries regardless of which git tag goreleaser resolves.
-for cfg in "$TARGET_CFG" "$TARGET_UI_DARWIN_CFG"; do
+for cfg in "$TARGET_CFG" "$TARGET_NFPM_CFG" "$TARGET_UI_DARWIN_CFG"; do
   perl -0pi -e 's/github\.com\/netbirdio\/netbird\/version\.version=\{\{\.Version\}\}/github.com\/netbirdio\/netbird\/version.version=\{\{ .Env.NETBIRD_RELEASE_TAG \}\}/g' "$cfg"
 done
 
 echo "[ok] generated goreleaser config: $TARGET_CFG"
+echo "[ok] generated goreleaser config: $TARGET_NFPM_CFG"
 echo "[ok] generated goreleaser config: $TARGET_UI_DARWIN_CFG"
