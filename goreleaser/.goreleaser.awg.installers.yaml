@@ -1,0 +1,66 @@
+version: 2
+
+project_name: netbird
+
+builds:
+  - id: netbird-windows-amd64
+    dir: client
+    binary: netbird
+    env: [ CGO_ENABLED=0 ]
+    goos:
+      - windows
+    goarch:
+      - amd64
+    ldflags:
+      - -s -w -X github.com/netbirdio/netbird/version.version={{ .Env.NETBIRD_RELEASE_TAG }} -X main.commit={{.Commit}} -X main.date={{.CommitDate}} -X main.builtBy=goreleaser
+    mod_timestamp: "{{ .CommitTimestamp }}"
+    tags:
+      - load_wgnt_from_rsrc
+
+  - id: netbird-darwin
+    dir: client
+    binary: netbird
+    env: [ CGO_ENABLED=0 ]
+    goos:
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X github.com/netbirdio/netbird/version.version={{ .Env.NETBIRD_RELEASE_TAG }} -X main.commit={{.Commit}} -X main.date={{.CommitDate}} -X main.builtBy=goreleaser
+    mod_timestamp: "{{ .CommitTimestamp }}"
+    tags:
+      - load_wgnt_from_rsrc
+
+  - id: netbird-ui-windows-amd64
+    dir: client/ui
+    binary: netbird-ui
+    env:
+      - CGO_ENABLED=1
+      - CC=x86_64-w64-mingw32-gcc
+    goos:
+      - windows
+    goarch:
+      - amd64
+    ldflags:
+      - -s -w -X github.com/netbirdio/netbird/version.version={{ .Env.NETBIRD_RELEASE_TAG }} -X main.commit={{.Commit}} -X main.date={{.CommitDate}} -X main.builtBy=goreleaser
+      - -H windowsgui
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+  - id: netbird-ui-darwin
+    dir: client/ui
+    binary: netbird-ui
+    env:
+      - CGO_ENABLED=1
+      - MACOSX_DEPLOYMENT_TARGET=11.0
+      - MACOS_DEPLOYMENT_TARGET=11.0
+    goos:
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X github.com/netbirdio/netbird/version.version={{ .Env.NETBIRD_RELEASE_TAG }} -X main.commit={{.Commit}} -X main.date={{.CommitDate}} -X main.builtBy=goreleaser
+    mod_timestamp: "{{ .CommitTimestamp }}"
+    tags:
+      - load_wgnt_from_rsrc
