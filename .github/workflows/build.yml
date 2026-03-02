@@ -143,9 +143,9 @@ jobs:
           $wixExt = "WixToolset.Util.wixext/$wixVersion"
           choco install nsis --no-progress -y
           dotnet tool install --global wix --version $wixVersion || dotnet tool update --global wix --version $wixVersion
-          wix extension add -g $wixExt -s https://api.nuget.org/v3/index.json
+          wix extension add -g $wixExt
           if ($LASTEXITCODE -ne 0) {
-            Write-Warning "Failed to install $wixExt globally from NuGet"
+            throw "Failed to install required extension: $wixExt"
           }
           wix extension list
           "$env:USERPROFILE\.dotnet\tools" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
