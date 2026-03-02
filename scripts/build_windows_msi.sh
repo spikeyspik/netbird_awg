@@ -93,7 +93,7 @@ has_wix_util_extension() {
 }
 
 ensure_wix_util_extension() {
-  local wix_ext="WixToolset.Util.wixext/$WIX_VERSION"
+  local wix_ext="WixToolset.Util.wixext"
 
   if has_wix_util_extension; then
     return 0

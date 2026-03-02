@@ -140,15 +140,30 @@ jobs:
         shell: pwsh
         run: |
           $wixVersion = "5.0.2"
-          $wixExt = "WixToolset.Util.wixext/$wixVersion"
+          $wixExtVersioned = "WixToolset.Util.wixext/$wixVersion"
+          $wixExtPlain = "WixToolset.Util.wixext"
+          $dotnetTools = "$env:USERPROFILE\.dotnet\tools"
+          $wixExe = Join-Path $dotnetTools "wix.exe"
+
           choco install nsis --no-progress -y
           dotnet tool install --global wix --version $wixVersion || dotnet tool update --global wix --version $wixVersion
-          wix extension add -g $wixExt
-          if ($LASTEXITCODE -ne 0) {
-            throw "Failed to install required extension: $wixExt"
+
+          if (-not (Test-Path $wixExe)) {
+            throw "wix.exe not found at $wixExe"
           }
-          wix extension list
-          "$env:USERPROFILE\.dotnet\tools" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+          $env:PATH = "$dotnetTools;$env:PATH"
+
+          & $wixExe extension add -g $wixExtVersioned
+          if ($LASTEXITCODE -ne 0) {
+            & $wixExe extension add -g $wixExtPlain
+          }
+          if ($LASTEXITCODE -ne 0) {
+            throw "Failed to install required extension: $wixExtVersioned / $wixExtPlain"
+          }
+
+          & $wixExe extension list
+          $dotnetTools | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
           "C:\Program Files (x86)\NSIS" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
 
       - name: Prepare sources
