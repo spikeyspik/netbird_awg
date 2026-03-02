@@ -89,7 +89,7 @@ run_wix_build_with_util() {
 run_wix_build_without_util() {
   # Linux builds often do not have WixToolset.Util.wixext; strip util-only directives.
   sed \
-    -e '/xmlns:util=/d' \
+    -e 's/[[:space:]]xmlns:util="[^"]*"//' \
     -e '/<util:CloseApplication /d' \
     "$wxs_file" > "$tmp_wxs"
 

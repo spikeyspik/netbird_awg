@@ -52,18 +52,6 @@ jobs:
             ${{ github.workspace }}/workdir/repos/netbird/go.mod
             ${{ github.workspace }}/workdir/repos/netbird/go.sum
 
-      - name: Setup .NET SDK (for WiX)
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: 8.0.x
-
-      - name: Install windows installer dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y gcc-mingw-w64-x86-64 nsis
-          dotnet tool install --global wix --version 5.*
-          echo "$HOME/.dotnet/tools" >> "$GITHUB_PATH"
-
       - name: Detect build parallelism
         id: parallelism
         run: echo "value=$(nproc)" >> "$GITHUB_OUTPUT"
@@ -82,18 +70,77 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GOMAXPROCS: ${{ steps.parallelism.outputs.value }}
 
-      - name: Build windows installer (.exe)
-        run: ./scripts/build_windows_installer.sh
-
-      - name: Build windows installer (.msi)
-        run: ./scripts/build_windows_msi.sh
-
       - name: Upload snapshot artifacts
         uses: actions/upload-artifact@v4
         with:
           name: snapshot-${{ github.run_number }}-${{ github.sha }}
           path: |
             ${{ github.workspace }}/workdir/repos/netbird/dist/**
+          if-no-files-found: error
+          retention-days: 7
+
+  snapshot_windows_installers:
+    if: ${{ github.event_name != 'workflow_dispatch' || github.event.inputs.publish_release != 'true' }}
+    runs-on: windows-latest
+    env:
+      WORKDIR: ${{ github.workspace }}/workdir
+      BASE_TAG: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.base_tag || '' }}
+
+    steps:
+      - name: Checkout pipeline repository
+        uses: actions/checkout@v4
+
+      - name: Resolve version variables
+        shell: bash
+        run: |
+          ./scripts/version_vars.sh --github-env >> "$GITHUB_ENV"
+          ./scripts/version_vars.sh --print
+
+      - name: Clone upstream sources
+        shell: bash
+        run: ./scripts/clone_sources.sh
+
+      - name: Setup Go (from cloned netbird go.mod)
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: ${{ github.workspace }}/workdir/repos/netbird/go.mod
+          cache: true
+          cache-dependency-path: |
+            ${{ github.workspace }}/workdir/repos/netbird/go.mod
+            ${{ github.workspace }}/workdir/repos/netbird/go.sum
+
+      - name: Setup .NET SDK (for WiX)
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Install windows installer dependencies
+        shell: pwsh
+        run: |
+          choco install nsis --no-progress -y
+          dotnet tool install --global wix --version 5.*
+          "$env:USERPROFILE\.dotnet\tools" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          "C:\Program Files (x86)\NSIS" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: Prepare patched sources
+        shell: bash
+        run: SKIP_CLONE=1 ./scripts/prepare_sources.sh
+
+      - name: Build windows installer (.exe)
+        shell: bash
+        run: ./scripts/build_windows_installer.sh
+
+      - name: Build windows installer (.msi)
+        shell: bash
+        run: ./scripts/build_windows_msi.sh
+
+      - name: Upload snapshot windows installers
+        uses: actions/upload-artifact@v4
+        with:
+          name: snapshot-windows-installers-${{ github.run_number }}-${{ github.sha }}
+          path: |
+            ${{ github.workspace }}/workdir/repos/netbird/dist/netbird_installer_*_windows_amd64.exe
+            ${{ github.workspace }}/workdir/repos/netbird/dist/netbird_installer_*_windows_amd64.msi
           if-no-files-found: error
           retention-days: 7
 
@@ -182,18 +229,6 @@ jobs:
             ${{ github.workspace }}/workdir/repos/netbird/go.mod
             ${{ github.workspace }}/workdir/repos/netbird/go.sum
 
-      - name: Setup .NET SDK (for WiX)
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: 8.0.x
-
-      - name: Install windows installer dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y gcc-mingw-w64-x86-64 nsis
-          dotnet tool install --global wix --version 5.*
-          echo "$HOME/.dotnet/tools" >> "$GITHUB_PATH"
-
       - name: Detect build parallelism
         id: parallelism
         run: echo "value=$(nproc)" >> "$GITHUB_OUTPUT"
@@ -215,15 +250,68 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GOMAXPROCS: ${{ steps.parallelism.outputs.value }}
 
+  release_windows_installers:
+    if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.publish_release == 'true' }}
+    needs: release
+    runs-on: windows-latest
+    environment:
+      name: awg-release
+    env:
+      WORKDIR: ${{ github.workspace }}/workdir
+      BASE_TAG: ${{ github.event.inputs.base_tag }}
+
+    steps:
+      - name: Checkout pipeline repository
+        uses: actions/checkout@v4
+
+      - name: Resolve version variables
+        shell: bash
+        run: |
+          ./scripts/version_vars.sh --github-env >> "$GITHUB_ENV"
+          ./scripts/version_vars.sh --print
+
+      - name: Clone upstream sources
+        shell: bash
+        run: ./scripts/clone_sources.sh
+
+      - name: Setup Go (from cloned netbird go.mod)
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: ${{ github.workspace }}/workdir/repos/netbird/go.mod
+          cache: true
+          cache-dependency-path: |
+            ${{ github.workspace }}/workdir/repos/netbird/go.mod
+            ${{ github.workspace }}/workdir/repos/netbird/go.sum
+
+      - name: Setup .NET SDK (for WiX)
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Install windows installer dependencies
+        shell: pwsh
+        run: |
+          choco install nsis --no-progress -y
+          dotnet tool install --global wix --version 5.*
+          "$env:USERPROFILE\.dotnet\tools" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          "C:\Program Files (x86)\NSIS" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: Prepare patched sources
+        shell: bash
+        run: SKIP_CLONE=1 ./scripts/prepare_sources.sh
+
       - name: Build windows installer (.exe)
+        shell: bash
         run: ./scripts/build_windows_installer.sh
 
       - name: Build windows installer (.msi)
+        shell: bash
         run: ./scripts/build_windows_msi.sh
 
-      - name: Upload windows installer to release
+      - name: Upload windows installers to release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
         run: |
           cd "$GITHUB_WORKSPACE/workdir/repos/netbird/dist"
           shopt -s nullglob
