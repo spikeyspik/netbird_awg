@@ -14,23 +14,26 @@ apply_or_skip() {
   local repo_dir="$1"
   local patch_file="$2"
   local name="$3"
+  local apply_opts=(--ignore-space-change --ignore-whitespace --whitespace=nowarn)
 
   if [[ ! -f "$patch_file" ]]; then
     echo "[error] missing patch: $patch_file"
     exit 1
   fi
 
-  if git -C "$repo_dir" apply --check "$patch_file" >/dev/null 2>&1; then
+  if git -C "$repo_dir" apply "${apply_opts[@]}" --check "$patch_file" >/dev/null 2>&1; then
     echo "[apply] $name"
-    git -C "$repo_dir" apply "$patch_file"
+    git -C "$repo_dir" apply "${apply_opts[@]}" "$patch_file"
     return 0
   fi
 
-  if git -C "$repo_dir" apply --reverse --check "$patch_file" >/dev/null 2>&1; then
+  if git -C "$repo_dir" apply "${apply_opts[@]}" --reverse --check "$patch_file" >/dev/null 2>&1; then
     echo "[skip] $name already applied"
     return 0
   fi
 
+  echo "[debug] apply check details for $name"
+  git -C "$repo_dir" apply "${apply_opts[@]}" --check -v "$patch_file" || true
   echo "[error] $name cannot be applied cleanly"
   exit 1
 }

@@ -1,0 +1,252 @@
+name: NetBird AWG Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      base_tag:
+        description: "Base tag (e.g. v0.66.0)"
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    uses: ./.github/workflows/build.yml
+    with:
+      base_tag: ${{ github.event.inputs.base_tag }}
+      release_mode: true
+    secrets: inherit
+
+  update_release_tag:
+    needs:
+      - build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve vars
+        run: |
+          ./scripts/version_vars.sh --github-env >> "$GITHUB_ENV"
+          ./scripts/version_vars.sh --print
+
+      - name: Push release tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch --tags --force origin
+          if git rev-parse -q --verify "refs/tags/${NETBIRD_RELEASE_TAG}" >/dev/null; then
+            git tag -d "${NETBIRD_RELEASE_TAG}"
+          fi
+          git tag -a "${NETBIRD_RELEASE_TAG}" -m "${NETBIRD_RELEASE_TAG}" "${GITHUB_SHA}"
+          git push origin "refs/tags/${NETBIRD_RELEASE_TAG}" --force
+
+  release_assets:
+    needs:
+      - build
+      - update_release_tag
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve vars
+        run: |
+          ./scripts/version_vars.sh --github-env >> "$GITHUB_ENV"
+          ./scripts/version_vars.sh --print
+
+      - name: Download linux artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-linux-${{ github.run_number }}-${{ github.sha }}
+          path: artifacts/linux
+
+      - name: Download windows artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-windows-${{ github.run_number }}-${{ github.sha }}
+          path: artifacts/windows
+
+      - name: Download darwin artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-darwin-${{ github.run_number }}-${{ github.sha }}
+          path: artifacts/darwin
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if ! gh release view "$NETBIRD_RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$NETBIRD_RELEASE_TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "$NETBIRD_RELEASE_TAG" \
+              --notes "Automated AWG release based on ${NETBIRD_BASE_TAG}."
+          fi
+
+      - name: Upload assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mapfile -t files < <(find artifacts -type f | sort)
+          if [[ "${#files[@]}" -eq 0 ]]; then
+            echo "[error] no release artifacts found"
+            find artifacts -maxdepth 4 -type d | sort
+            exit 1
+          fi
+          for file in "${files[@]}"; do
+            gh release upload "$NETBIRD_RELEASE_TAG" "$file" --repo "$GITHUB_REPOSITORY" --clobber
+          done
+
+  release_management_container:
+    needs:
+      - build
+      - release_assets
+    runs-on: ubuntu-latest
+    environment:
+      name: awg-release
+    env:
+      WORKDIR: ${{ github.workspace }}/workdir
+      BASE_TAG: ${{ github.event.inputs.base_tag }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve vars
+        run: |
+          ./scripts/version_vars.sh --github-env >> "$GITHUB_ENV"
+          ./scripts/version_vars.sh --print
+
+      - name: Clone sources
+        run: ./scripts/clone_sources.sh
+
+      - name: Prepare sources
+        run: SKIP_CLONE=1 ./scripts/prepare_sources.sh
+
+      - name: Setup Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Push management image
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ github.workspace }}/workdir/repos/netbird
+          file: ${{ github.workspace }}/workdir/repos/netbird/management/Dockerfile.multistage
+          build-contexts: |
+            amneziawg-go=${{ github.workspace }}/workdir/repos/amneziawg-go
+            amneziawg-windows=${{ github.workspace }}/workdir/repos/amneziawg-windows
+          platforms: linux/amd64
+          tags: |
+            spikeyspik/netbird_awg_management:${{ env.NETBIRD_RELEASE_TAG }}
+            spikeyspik/netbird_awg_management:latest
+          outputs: type=registry,compression=zstd,compression-level=12,force-compression=true
+          cache-from: type=gha,scope=management-image
+          cache-to: type=gha,mode=max,scope=management-image
+
+  release_client_container:
+    needs:
+      - build
+      - release_assets
+    runs-on: ubuntu-latest
+    environment:
+      name: awg-release
+    env:
+      WORKDIR: ${{ github.workspace }}/workdir
+      BASE_TAG: ${{ github.event.inputs.base_tag }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve vars
+        run: |
+          ./scripts/version_vars.sh --github-env >> "$GITHUB_ENV"
+          ./scripts/version_vars.sh --print
+
+      - name: Clone sources
+        run: ./scripts/clone_sources.sh
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: ${{ github.workspace }}/workdir/repos/netbird/go.mod
+          cache: true
+          cache-dependency-path: |
+            ${{ github.workspace }}/workdir/repos/netbird/go.mod
+            ${{ github.workspace }}/workdir/repos/netbird/go.sum
+
+      - name: Prepare sources
+        run: SKIP_CLONE=1 ./scripts/prepare_sources.sh
+
+      - name: Setup QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Setup Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build client binaries
+        run: |
+          cd "$GITHUB_WORKSPACE/workdir/repos/netbird"
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o netbird-linux-amd64 ./client
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=7 go build -trimpath -ldflags="-s -w" -o netbird-linux-armv7 ./client
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags="-s -w" -o netbird-linux-arm64 ./client
+
+      - name: Push client arch images
+        run: |
+          cd "$GITHUB_WORKSPACE/workdir/repos/netbird"
+          REPO="spikeyspik/netbird_awg"
+
+          docker buildx build \
+            --platform linux/amd64 \
+            -f client/Dockerfile \
+            --build-arg NETBIRD_BINARY=netbird-linux-amd64 \
+            -t "${REPO}:${NETBIRD_RELEASE_TAG}-linux-amd64" \
+            --output "type=registry,compression=zstd,compression-level=12,force-compression=true" .
+
+          docker buildx build \
+            --platform linux/arm/v7 \
+            -f client/Dockerfile \
+            --build-arg NETBIRD_BINARY=netbird-linux-armv7 \
+            -t "${REPO}:${NETBIRD_RELEASE_TAG}-linux-armv7" \
+            --output "type=registry,compression=zstd,compression-level=12,force-compression=true" .
+
+          docker buildx build \
+            --platform linux/arm64 \
+            -f client/Dockerfile \
+            --build-arg NETBIRD_BINARY=netbird-linux-arm64 \
+            -t "${REPO}:${NETBIRD_RELEASE_TAG}-linux-arm64" \
+            --output "type=registry,compression=zstd,compression-level=12,force-compression=true" .
+
+      - name: Push multi-arch manifests
+        run: |
+          REPO="spikeyspik/netbird_awg"
+          docker buildx imagetools create \
+            -t "${REPO}:${NETBIRD_RELEASE_TAG}" \
+            "${REPO}:${NETBIRD_RELEASE_TAG}-linux-amd64" \
+            "${REPO}:${NETBIRD_RELEASE_TAG}-linux-armv7" \
+            "${REPO}:${NETBIRD_RELEASE_TAG}-linux-arm64"
+
+          docker buildx imagetools create \
+            -t "${REPO}:latest" \
+            "${REPO}:${NETBIRD_RELEASE_TAG}-linux-amd64" \
+            "${REPO}:${NETBIRD_RELEASE_TAG}-linux-armv7" \
+            "${REPO}:${NETBIRD_RELEASE_TAG}-linux-arm64"
