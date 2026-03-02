@@ -227,12 +227,14 @@ jobs:
         run: |
           cd "$GITHUB_WORKSPACE/workdir/repos/netbird/dist"
           shopt -s nullglob
-          files=(netbird_installer_*_windows_amd64.exe netbird_installer_*_windows_amd64.msi)
-          if [[ "${#files[@]}" -eq 0 ]]; then
-            echo "[error] no windows installer found in dist/"
+          exes=(netbird_installer_*_windows_amd64.exe)
+          msis=(netbird_installer_*_windows_amd64.msi)
+          if [[ "${#exes[@]}" -eq 0 || "${#msis[@]}" -eq 0 ]]; then
+            echo "[error] expected both .exe and .msi installers in dist/"
             find . -maxdepth 2 -type f | sort
             exit 1
           fi
+          files=("${exes[@]}" "${msis[@]}")
           for file in "${files[@]}"; do
             gh release upload "$NETBIRD_RELEASE_TAG" "$file" --repo "$GITHUB_REPOSITORY" --clobber
           done
