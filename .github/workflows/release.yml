@@ -157,6 +157,54 @@ jobs:
           cache-from: type=gha,scope=management-image
           cache-to: type=gha,mode=max,scope=management-image
 
+  release_server_container:
+    needs:
+      - build
+      - release_assets
+    runs-on: ubuntu-latest
+    environment:
+      name: awg-release
+    env:
+      WORKDIR: ${{ github.workspace }}/workdir
+      BASE_TAG: ${{ github.event.inputs.base_tag }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve vars
+        run: |
+          ./scripts/version_vars.sh --github-env >> "$GITHUB_ENV"
+          ./scripts/version_vars.sh --print
+
+      - name: Clone sources
+        run: ./scripts/clone_sources.sh
+
+      - name: Prepare sources
+        run: ./scripts/prepare_sources.sh
+
+      - name: Setup Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Push netbird-server image
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ github.workspace }}/workdir/repos/netbird
+          file: ${{ github.workspace }}/workdir/repos/netbird/combined/Dockerfile.multistage
+          platforms: linux/amd64
+          tags: |
+            spikeyspik/netbird_awg_server:${{ env.NETBIRD_RELEASE_TAG }}
+            spikeyspik/netbird_awg_server:latest
+          outputs: type=registry,compression=zstd,compression-level=12,force-compression=true
+          cache-from: type=gha,scope=server-image
+          cache-to: type=gha,mode=max,scope=server-image
+
   release_client_container:
     needs:
       - build
