@@ -87,7 +87,7 @@ jobs:
           distribution: goreleaser
           version: latest
           workdir: ${{ github.workspace }}/workdir/repos/netbird
-          args: release --snapshot --config .goreleaser.awg.nfpm.yaml --skip=archive
+          args: release --clean --snapshot --config .goreleaser.awg.nfpm.yaml --skip=archive
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -98,9 +98,9 @@ jobs:
           path: |
             ${{ github.workspace }}/workdir/repos/netbird/dist/netbird_*_linux_amd64*
             ${{ github.workspace }}/workdir/repos/netbird/dist/netbird_*_linux_arm64*
-            ${{ github.workspace }}/workdir/repos/netbird/dist/*.deb
-            ${{ github.workspace }}/workdir/repos/netbird/dist/*.rpm
-            ${{ github.workspace }}/workdir/repos/netbird/dist/*.pkg.tar.zst
+            ${{ github.workspace }}/workdir/repos/netbird/dist-nfpm/*.deb
+            ${{ github.workspace }}/workdir/repos/netbird/dist-nfpm/*.rpm
+            ${{ github.workspace }}/workdir/repos/netbird/dist-nfpm/*.pkg.tar.zst
           if-no-files-found: error
           retention-days: 7
 

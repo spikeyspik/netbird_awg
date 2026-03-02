@@ -337,6 +337,12 @@ def package_snapshot_block():
     ]
 
 
+def package_dist_block():
+    return [
+        "dist: dist-nfpm\n",
+    ]
+
+
 def netbird_archlinux_nfpms_block():
     return [
         "nfpms:\n",
@@ -401,6 +407,7 @@ target_main_path.write_text("".join(out_main), encoding="utf-8", errors="surroga
 sections_nfpm = [
     root_sections.get("version", []),
     root_sections.get("project_name", []),
+    package_dist_block(),
     root_builds,
     merged_nfpms,
     package_snapshot_block(),
