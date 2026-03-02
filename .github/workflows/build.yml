@@ -2,6 +2,18 @@ name: NetBird AWG Build
 
 on:
   push:
+  workflow_call:
+    inputs:
+      base_tag:
+        description: Base tag (e.g. v0.66.0)
+        required: false
+        default: ""
+        type: string
+      release_mode:
+        description: Use release build mode instead of snapshot
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -11,7 +23,8 @@ jobs:
     runs-on: ubuntu-latest
     env:
       WORKDIR: ${{ github.workspace }}/workdir
-      BASE_TAG: ""
+      BASE_TAG: ${{ inputs.base_tag || '' }}
+      RELEASE_MODE: ${{ inputs.release_mode && 'true' || 'false' }}
 
     steps:
       - name: Checkout
@@ -42,7 +55,23 @@ jobs:
       - name: Prepare sources
         run: SKIP_CLONE=1 ./scripts/prepare_sources.sh
 
+      - name: Prepare release tag in source tree
+        if: ${{ env.RELEASE_MODE == 'true' }}
+        run: ./scripts/prepare_netbird_release_git.sh
+
+      - name: Build (release local)
+        if: ${{ env.RELEASE_MODE == 'true' }}
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: latest
+          workdir: ${{ github.workspace }}/workdir/repos/netbird
+          args: release --clean --config .goreleaser.awg.yaml --skip=publish --skip=validate
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Build (snapshot)
+        if: ${{ env.RELEASE_MODE != 'true' }}
         uses: goreleaser/goreleaser-action@v6
         with:
           distribution: goreleaser
@@ -68,7 +97,7 @@ jobs:
     runs-on: windows-latest
     env:
       WORKDIR: ${{ github.workspace }}/workdir
-      BASE_TAG: ""
+      BASE_TAG: ${{ inputs.base_tag || '' }}
 
     steps:
       - name: Checkout
@@ -151,7 +180,7 @@ jobs:
     runs-on: macos-latest
     env:
       WORKDIR: ${{ github.workspace }}/workdir
-      BASE_TAG: ""
+      BASE_TAG: ${{ inputs.base_tag || '' }}
 
     steps:
       - name: Checkout

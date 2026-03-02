@@ -13,207 +13,16 @@ permissions:
   contents: write
 
 jobs:
-  build_linux:
-    runs-on: ubuntu-latest
-    env:
-      WORKDIR: ${{ github.workspace }}/workdir
-      BASE_TAG: ${{ github.event.inputs.base_tag }}
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Resolve vars
-        run: |
-          ./scripts/version_vars.sh --github-env >> "$GITHUB_ENV"
-          ./scripts/version_vars.sh --print
-
-      - name: Clone sources
-        run: ./scripts/clone_sources.sh
-
-      - name: Setup Go
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: ${{ github.workspace }}/workdir/repos/netbird/go.mod
-          cache: true
-          cache-dependency-path: |
-            ${{ github.workspace }}/workdir/repos/netbird/go.mod
-            ${{ github.workspace }}/workdir/repos/netbird/go.sum
-
-      - name: Install cross toolchain
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y gcc-mingw-w64-x86-64
-
-      - name: Prepare sources
-        run: SKIP_CLONE=1 ./scripts/prepare_sources.sh
-
-      - name: Prepare release tag in source tree
-        run: ./scripts/prepare_netbird_release_git.sh
-
-      - name: Build (release local)
-        uses: goreleaser/goreleaser-action@v6
-        with:
-          distribution: goreleaser
-          version: latest
-          workdir: ${{ github.workspace }}/workdir/repos/netbird
-          args: release --clean --config .goreleaser.awg.yaml --skip=publish --skip=validate
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-linux-${{ github.run_number }}-${{ github.sha }}
-          path: |
-            ${{ github.workspace }}/workdir/repos/netbird/dist/netbird_*_linux_amd64*
-            ${{ github.workspace }}/workdir/repos/netbird/dist/netbird_*_linux_arm64*
-            ${{ github.workspace }}/workdir/repos/netbird/dist/*.deb
-            ${{ github.workspace }}/workdir/repos/netbird/dist/*.rpm
-          if-no-files-found: error
-          retention-days: 7
-
-  build_windows:
-    runs-on: windows-latest
-    env:
-      WORKDIR: ${{ github.workspace }}/workdir
-      BASE_TAG: ${{ github.event.inputs.base_tag }}
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Normalize line endings
-        shell: bash
-        run: |
-          git config --global core.autocrlf false
-          git config --global core.eol lf
-          git -C "$GITHUB_WORKSPACE" config core.autocrlf false
-          git -C "$GITHUB_WORKSPACE" reset --hard HEAD
-          git -C "$GITHUB_WORKSPACE" clean -fd
-
-      - name: Resolve vars
-        shell: bash
-        run: |
-          ./scripts/version_vars.sh --github-env >> "$GITHUB_ENV"
-          ./scripts/version_vars.sh --print
-
-      - name: Clone sources
-        shell: bash
-        run: ./scripts/clone_sources.sh
-
-      - name: Setup Go
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: ${{ github.workspace }}/workdir/repos/netbird/go.mod
-          cache: true
-          cache-dependency-path: |
-            ${{ github.workspace }}/workdir/repos/netbird/go.mod
-            ${{ github.workspace }}/workdir/repos/netbird/go.sum
-
-      - name: Setup dotnet
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: 8.0.x
-
-      - name: Install NSIS/WiX
-        shell: pwsh
-        run: |
-          choco install nsis --no-progress -y
-          dotnet tool install --global wix --version 5.* || dotnet tool update --global wix --version 5.*
-          "$env:USERPROFILE\.dotnet\tools" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-          "C:\Program Files (x86)\NSIS" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-
-      - name: Prepare sources
-        shell: bash
-        run: SKIP_CLONE=1 ./scripts/prepare_sources.sh
-
-      - name: Build ui binary
-        uses: goreleaser/goreleaser-action@v6
-        with:
-          distribution: goreleaser
-          version: latest
-          workdir: ${{ github.workspace }}/workdir/repos/netbird
-          args: build --clean --snapshot --config .goreleaser.awg.yaml --id netbird-ui-windows-amd64
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build .exe
-        shell: bash
-        run: ./scripts/build_windows_installer.sh
-
-      - name: Build .msi
-        shell: bash
-        run: ./scripts/build_windows_msi.sh
-
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-windows-${{ github.run_number }}-${{ github.sha }}
-          path: |
-            ${{ github.workspace }}/workdir/repos/netbird/dist/netbird_installer_*_windows_amd64.exe
-            ${{ github.workspace }}/workdir/repos/netbird/dist/netbird_installer_*_windows_amd64.msi
-          if-no-files-found: error
-          retention-days: 7
-
-  build_darwin:
-    runs-on: macos-latest
-    env:
-      WORKDIR: ${{ github.workspace }}/workdir
-      BASE_TAG: ${{ github.event.inputs.base_tag }}
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Resolve vars
-        run: |
-          ./scripts/version_vars.sh --github-env >> "$GITHUB_ENV"
-          ./scripts/version_vars.sh --print
-
-      - name: Clone sources
-        run: ./scripts/clone_sources.sh
-
-      - name: Setup Go
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: ${{ github.workspace }}/workdir/repos/netbird/go.mod
-          cache: true
-          cache-dependency-path: |
-            ${{ github.workspace }}/workdir/repos/netbird/go.mod
-            ${{ github.workspace }}/workdir/repos/netbird/go.sum
-
-      - name: Prepare sources
-        run: SKIP_CLONE=1 ./scripts/prepare_sources.sh
-
-      - name: Build ui binaries
-        uses: goreleaser/goreleaser-action@v6
-        with:
-          distribution: goreleaser
-          version: latest
-          workdir: ${{ github.workspace }}/workdir/repos/netbird
-          args: build --clean --snapshot --config .goreleaser_ui_darwin.awg.yaml
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build .pkg
-        run: ./scripts/build_darwin_pkg.sh
-
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-darwin-${{ github.run_number }}-${{ github.sha }}
-          path: |
-            ${{ github.workspace }}/workdir/repos/netbird/dist/netbird_*_darwin_amd64.pkg
-            ${{ github.workspace }}/workdir/repos/netbird/dist/netbird_*_darwin_arm64.pkg
-          if-no-files-found: error
-          retention-days: 7
+  build:
+    uses: ./.github/workflows/build.yml
+    with:
+      base_tag: ${{ github.event.inputs.base_tag }}
+      release_mode: true
+    secrets: inherit
 
   update_release_tag:
     needs:
-      - build_linux
-      - build_windows
-      - build_darwin
+      - build
     runs-on: ubuntu-latest
 
     steps:
@@ -240,9 +49,7 @@ jobs:
 
   release_assets:
     needs:
-      - build_linux
-      - build_windows
-      - build_darwin
+      - build
       - update_release_tag
     runs-on: ubuntu-latest
 
@@ -300,7 +107,7 @@ jobs:
 
   release_management_container:
     needs:
-      - build_linux
+      - build
       - release_assets
     runs-on: ubuntu-latest
     environment:
@@ -351,7 +158,7 @@ jobs:
 
   release_client_container:
     needs:
-      - build_linux
+      - build
       - release_assets
     runs-on: ubuntu-latest
     environment:
