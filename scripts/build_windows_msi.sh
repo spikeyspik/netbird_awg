@@ -99,8 +99,8 @@ ensure_wix_util_extension() {
     return 0
   fi
 
-  wix extension add "$wix_ext" -s https://api.nuget.org/v3/index.json || true
-  wix extension add -g "$wix_ext" -s https://api.nuget.org/v3/index.json || true
+  wix extension add "$wix_ext" || true
+  wix extension add -g "$wix_ext" || true
 
   if has_wix_util_extension; then
     return 0
