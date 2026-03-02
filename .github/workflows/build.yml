@@ -1,39 +1,31 @@
-name: NetBird AWG Build Pipeline
+name: NetBird AWG Build
 
 on:
   push:
-  workflow_dispatch:
-    inputs:
-      base_tag:
-        description: "Base tag (e.g. v0.66.0)"
-        required: false
-        default: ""
-        type: string
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build_linux:
     runs-on: ubuntu-latest
     env:
       WORKDIR: ${{ github.workspace }}/workdir
-      BASE_TAG: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.base_tag || '' }}
+      BASE_TAG: ""
 
     steps:
-      - name: Checkout pipeline repository
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Resolve version variables
+      - name: Resolve vars
         run: |
           ./scripts/version_vars.sh --github-env >> "$GITHUB_ENV"
           ./scripts/version_vars.sh --print
 
-      - name: Clone upstream sources
+      - name: Clone sources
         run: ./scripts/clone_sources.sh
 
-      - name: Setup Go (from cloned netbird go.mod)
-        id: setup_go
+      - name: Setup Go
         uses: actions/setup-go@v5
         with:
           go-version-file: ${{ github.workspace }}/workdir/repos/netbird/go.mod
@@ -42,20 +34,15 @@ jobs:
             ${{ github.workspace }}/workdir/repos/netbird/go.mod
             ${{ github.workspace }}/workdir/repos/netbird/go.sum
 
-      - name: Install cross-compile dependencies
+      - name: Install cross toolchain
         run: |
           sudo apt-get update
           sudo apt-get install -y gcc-mingw-w64-x86-64
 
-      - name: Prepare patched sources
+      - name: Prepare sources
         run: SKIP_CLONE=1 ./scripts/prepare_sources.sh
 
-      - name: Prepare git tag for release build
-        if: ${{ github.event_name == 'workflow_dispatch' }}
-        run: ./scripts/prepare_netbird_release_git.sh
-
-      - name: Run GoReleaser snapshot build (linux)
-        if: ${{ github.event_name != 'workflow_dispatch' }}
+      - name: Build (snapshot)
         uses: goreleaser/goreleaser-action@v6
         with:
           distribution: goreleaser
@@ -65,18 +52,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Run GoReleaser release build (linux, local artifacts only)
-        if: ${{ github.event_name == 'workflow_dispatch' }}
-        uses: goreleaser/goreleaser-action@v6
-        with:
-          distribution: goreleaser
-          version: latest
-          workdir: ${{ github.workspace }}/workdir/repos/netbird
-          args: release --clean --config .goreleaser.awg.yaml --skip=publish --skip=validate
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Upload linux artifacts
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: build-linux-${{ github.run_number }}-${{ github.sha }}
@@ -92,13 +68,13 @@ jobs:
     runs-on: windows-latest
     env:
       WORKDIR: ${{ github.workspace }}/workdir
-      BASE_TAG: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.base_tag || '' }}
+      BASE_TAG: ""
 
     steps:
-      - name: Checkout pipeline repository
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Configure Git line endings for patches
+      - name: Normalize line endings
         shell: bash
         run: |
           git config --global core.autocrlf false
@@ -107,17 +83,17 @@ jobs:
           git -C "$GITHUB_WORKSPACE" reset --hard HEAD
           git -C "$GITHUB_WORKSPACE" clean -fd
 
-      - name: Resolve version variables
+      - name: Resolve vars
         shell: bash
         run: |
           ./scripts/version_vars.sh --github-env >> "$GITHUB_ENV"
           ./scripts/version_vars.sh --print
 
-      - name: Clone upstream sources
+      - name: Clone sources
         shell: bash
         run: ./scripts/clone_sources.sh
 
-      - name: Setup Go (from cloned netbird go.mod)
+      - name: Setup Go
         uses: actions/setup-go@v5
         with:
           go-version-file: ${{ github.workspace }}/workdir/repos/netbird/go.mod
@@ -126,12 +102,12 @@ jobs:
             ${{ github.workspace }}/workdir/repos/netbird/go.mod
             ${{ github.workspace }}/workdir/repos/netbird/go.sum
 
-      - name: Setup .NET SDK (for WiX)
+      - name: Setup dotnet
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 8.0.x
 
-      - name: Install windows installer dependencies
+      - name: Install NSIS/WiX
         shell: pwsh
         run: |
           choco install nsis --no-progress -y
@@ -139,11 +115,11 @@ jobs:
           "$env:USERPROFILE\.dotnet\tools" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
           "C:\Program Files (x86)\NSIS" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
 
-      - name: Prepare patched sources
+      - name: Prepare sources
         shell: bash
         run: SKIP_CLONE=1 ./scripts/prepare_sources.sh
 
-      - name: Build windows UI binary via GoReleaser
+      - name: Build ui binary
         uses: goreleaser/goreleaser-action@v6
         with:
           distribution: goreleaser
@@ -153,15 +129,15 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build windows installer (.exe)
+      - name: Build .exe
         shell: bash
         run: ./scripts/build_windows_installer.sh
 
-      - name: Build windows installer (.msi)
+      - name: Build .msi
         shell: bash
         run: ./scripts/build_windows_msi.sh
 
-      - name: Upload windows artifacts
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: build-windows-${{ github.run_number }}-${{ github.sha }}
@@ -175,21 +151,21 @@ jobs:
     runs-on: macos-latest
     env:
       WORKDIR: ${{ github.workspace }}/workdir
-      BASE_TAG: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.base_tag || '' }}
+      BASE_TAG: ""
 
     steps:
-      - name: Checkout pipeline repository
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Resolve version variables
+      - name: Resolve vars
         run: |
           ./scripts/version_vars.sh --github-env >> "$GITHUB_ENV"
           ./scripts/version_vars.sh --print
 
-      - name: Clone upstream sources
+      - name: Clone sources
         run: ./scripts/clone_sources.sh
 
-      - name: Setup Go (from cloned netbird go.mod)
+      - name: Setup Go
         uses: actions/setup-go@v5
         with:
           go-version-file: ${{ github.workspace }}/workdir/repos/netbird/go.mod
@@ -198,10 +174,10 @@ jobs:
             ${{ github.workspace }}/workdir/repos/netbird/go.mod
             ${{ github.workspace }}/workdir/repos/netbird/go.sum
 
-      - name: Prepare patched sources
+      - name: Prepare sources
         run: SKIP_CLONE=1 ./scripts/prepare_sources.sh
 
-      - name: Build netbird-ui darwin binaries
+      - name: Build ui binaries
         uses: goreleaser/goreleaser-action@v6
         with:
           distribution: goreleaser
@@ -211,10 +187,10 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build darwin installers (.pkg)
+      - name: Build .pkg
         run: ./scripts/build_darwin_pkg.sh
 
-      - name: Upload darwin artifacts
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: build-darwin-${{ github.run_number }}-${{ github.sha }}
@@ -223,246 +199,3 @@ jobs:
             ${{ github.workspace }}/workdir/repos/netbird/dist/netbird_*_darwin_arm64.pkg
           if-no-files-found: error
           retention-days: 7
-
-  update_release_tag:
-    if: ${{ github.event_name == 'workflow_dispatch' }}
-    needs:
-      - build_linux
-      - build_windows
-      - build_darwin
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout pipeline repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Resolve version variables
-        run: |
-          ./scripts/version_vars.sh --github-env >> "$GITHUB_ENV"
-          ./scripts/version_vars.sh --print
-
-      - name: Update git tag
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-          git fetch --tags --force origin
-
-          if git rev-parse -q --verify "refs/tags/${NETBIRD_RELEASE_TAG}" >/dev/null; then
-            git tag -d "${NETBIRD_RELEASE_TAG}"
-          fi
-
-          git tag -a "${NETBIRD_RELEASE_TAG}" -m "${NETBIRD_RELEASE_TAG}" "${GITHUB_SHA}"
-          git push origin "refs/tags/${NETBIRD_RELEASE_TAG}" --force
-
-  release_assets:
-    if: ${{ github.event_name == 'workflow_dispatch' }}
-    needs:
-      - build_linux
-      - build_windows
-      - build_darwin
-      - update_release_tag
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout pipeline repository
-        uses: actions/checkout@v4
-
-      - name: Resolve version variables
-        run: |
-          ./scripts/version_vars.sh --github-env >> "$GITHUB_ENV"
-          ./scripts/version_vars.sh --print
-
-      - name: Download linux artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: build-linux-${{ github.run_number }}-${{ github.sha }}
-          path: artifacts/linux
-
-      - name: Download windows artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: build-windows-${{ github.run_number }}-${{ github.sha }}
-          path: artifacts/windows
-
-      - name: Download darwin artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: build-darwin-${{ github.run_number }}-${{ github.sha }}
-          path: artifacts/darwin
-
-      - name: Create release (if absent)
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          if ! gh release view "$NETBIRD_RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release create "$NETBIRD_RELEASE_TAG" \
-              --repo "$GITHUB_REPOSITORY" \
-              --title "$NETBIRD_RELEASE_TAG" \
-              --notes "Automated AWG release based on ${NETBIRD_BASE_TAG}."
-          fi
-
-      - name: Upload release assets
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          mapfile -t files < <(find artifacts -type f | sort)
-          if [[ "${#files[@]}" -eq 0 ]]; then
-            echo "[error] no release artifacts found"
-            find artifacts -maxdepth 4 -type d | sort
-            exit 1
-          fi
-
-          for file in "${files[@]}"; do
-            gh release upload "$NETBIRD_RELEASE_TAG" "$file" --repo "$GITHUB_REPOSITORY" --clobber
-          done
-
-  release_management_container:
-    if: ${{ github.event_name == 'workflow_dispatch' }}
-    needs:
-      - build_linux
-      - release_assets
-    runs-on: ubuntu-latest
-    environment:
-      name: awg-release
-    env:
-      WORKDIR: ${{ github.workspace }}/workdir
-      BASE_TAG: ${{ github.event.inputs.base_tag }}
-
-    steps:
-      - name: Checkout pipeline repository
-        uses: actions/checkout@v4
-
-      - name: Resolve version variables
-        run: |
-          ./scripts/version_vars.sh --github-env >> "$GITHUB_ENV"
-          ./scripts/version_vars.sh --print
-
-      - name: Clone upstream sources
-        run: ./scripts/clone_sources.sh
-
-      - name: Prepare patched sources
-        run: SKIP_CLONE=1 ./scripts/prepare_sources.sh
-
-      - name: Setup Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Login to Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Build and push management docker image
-        uses: docker/build-push-action@v6
-        with:
-          context: ${{ github.workspace }}/workdir/repos/netbird
-          file: ${{ github.workspace }}/workdir/repos/netbird/management/Dockerfile.multistage
-          build-contexts: |
-            amneziawg-go=${{ github.workspace }}/workdir/repos/amneziawg-go
-            amneziawg-windows=${{ github.workspace }}/workdir/repos/amneziawg-windows
-          platforms: linux/amd64
-          tags: |
-            spikeyspik/netbird_awg_management:${{ env.NETBIRD_RELEASE_TAG }}
-            spikeyspik/netbird_awg_management:latest
-          outputs: type=registry,compression=zstd,compression-level=12,force-compression=true
-          cache-from: type=gha,scope=management-image
-          cache-to: type=gha,mode=max,scope=management-image
-
-  release_client_container:
-    if: ${{ github.event_name == 'workflow_dispatch' }}
-    needs:
-      - build_linux
-      - release_assets
-    runs-on: ubuntu-latest
-    environment:
-      name: awg-release
-    env:
-      WORKDIR: ${{ github.workspace }}/workdir
-      BASE_TAG: ${{ github.event.inputs.base_tag }}
-
-    steps:
-      - name: Checkout pipeline repository
-        uses: actions/checkout@v4
-
-      - name: Resolve version variables
-        run: |
-          ./scripts/version_vars.sh --github-env >> "$GITHUB_ENV"
-          ./scripts/version_vars.sh --print
-
-      - name: Clone upstream sources
-        run: ./scripts/clone_sources.sh
-
-      - name: Setup Go (from cloned netbird go.mod)
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: ${{ github.workspace }}/workdir/repos/netbird/go.mod
-          cache: true
-          cache-dependency-path: |
-            ${{ github.workspace }}/workdir/repos/netbird/go.mod
-            ${{ github.workspace }}/workdir/repos/netbird/go.sum
-
-      - name: Prepare patched sources
-        run: SKIP_CLONE=1 ./scripts/prepare_sources.sh
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-
-      - name: Setup Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Login to Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Build client binaries (linux amd64/armv7/arm64)
-        run: |
-          cd "$GITHUB_WORKSPACE/workdir/repos/netbird"
-          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o netbird-linux-amd64 ./client
-          CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=7 go build -trimpath -ldflags="-s -w" -o netbird-linux-armv7 ./client
-          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags="-s -w" -o netbird-linux-arm64 ./client
-
-      - name: Build and push client arch images (original Dockerfile)
-        run: |
-          cd "$GITHUB_WORKSPACE/workdir/repos/netbird"
-          REPO="spikeyspik/netbird_awg"
-
-          docker buildx build \
-            --platform linux/amd64 \
-            -f client/Dockerfile \
-            --build-arg NETBIRD_BINARY=netbird-linux-amd64 \
-            -t "${REPO}:${NETBIRD_RELEASE_TAG}-linux-amd64" \
-            --output "type=registry,compression=zstd,compression-level=12,force-compression=true" .
-
-          docker buildx build \
-            --platform linux/arm/v7 \
-            -f client/Dockerfile \
-            --build-arg NETBIRD_BINARY=netbird-linux-armv7 \
-            -t "${REPO}:${NETBIRD_RELEASE_TAG}-linux-armv7" \
-            --output "type=registry,compression=zstd,compression-level=12,force-compression=true" .
-
-          docker buildx build \
-            --platform linux/arm64 \
-            -f client/Dockerfile \
-            --build-arg NETBIRD_BINARY=netbird-linux-arm64 \
-            -t "${REPO}:${NETBIRD_RELEASE_TAG}-linux-arm64" \
-            --output "type=registry,compression=zstd,compression-level=12,force-compression=true" .
-
-      - name: Create and push multi-arch manifests
-        run: |
-          REPO="spikeyspik/netbird_awg"
-          docker buildx imagetools create \
-            -t "${REPO}:${NETBIRD_RELEASE_TAG}" \
-            "${REPO}:${NETBIRD_RELEASE_TAG}-linux-amd64" \
-            "${REPO}:${NETBIRD_RELEASE_TAG}-linux-armv7" \
-            "${REPO}:${NETBIRD_RELEASE_TAG}-linux-arm64"
-
-          docker buildx imagetools create \
-            -t "${REPO}:latest" \
-            "${REPO}:${NETBIRD_RELEASE_TAG}-linux-amd64" \
-            "${REPO}:${NETBIRD_RELEASE_TAG}-linux-armv7" \
-            "${REPO}:${NETBIRD_RELEASE_TAG}-linux-arm64"
