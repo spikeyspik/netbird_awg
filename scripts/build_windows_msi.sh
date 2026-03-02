@@ -10,6 +10,7 @@ source "$SCRIPT_DIR/version_vars.sh"
 WORKDIR="${WORKDIR:-$ROOT_DIR/workdir}"
 NETBIRD_DIR="${NETBIRD_DIR:-$WORKDIR/repos/netbird}"
 DIST_DIR="$NETBIRD_DIR/dist"
+WIX_VERSION="${WIX_VERSION:-5.0.2}"
 
 if ! command -v wix >/dev/null 2>&1; then
   echo "[error] wix is not installed (dotnet tool wix)"
@@ -72,9 +73,7 @@ pick_file "opengl32.dll" "opengl32.dll" "OpenGL32.dll"
 
 artifact_path="$DIST_DIR/netbird_installer_${release_version}_windows_amd64.msi"
 tmp_msi="$NETBIRD_DIR/netbird-installer.msi"
-tmp_wxs="$NETBIRD_DIR/client/netbird.awg.msi.wxs"
-rm -f "$tmp_msi" "$artifact_path" "$tmp_wxs"
-trap 'rm -f "$tmp_wxs"' EXIT
+rm -f "$tmp_msi" "$artifact_path"
 
 run_wix_build_with_util() {
   (
@@ -89,32 +88,32 @@ run_wix_build_with_util() {
   )
 }
 
-run_wix_build_without_util() {
-  # Linux builds often do not have WixToolset.Util.wixext; strip util-only directives.
-  sed \
-    -e 's/[[:space:]]xmlns:util="[^"]*"//' \
-    -e '/<util:CloseApplication /d' \
-    "$wxs_file" > "$tmp_wxs"
-
-  (
-    cd "$NETBIRD_DIR"
-    NETBIRD_VERSION="$base_core" wix build \
-      -arch x64 \
-      -d ArchSuffix=amd64 \
-      -d ProcessorArchitecture=x64 \
-      -o "$tmp_msi" \
-      "client/netbird.awg.msi.wxs"
-  )
+has_wix_util_extension() {
+  wix extension list | grep -Eq 'WixToolset\.Util\.wixext'
 }
 
-if ! run_wix_build_with_util; then
-  wix extension add WixToolset.Util.wixext >/dev/null 2>&1 || true
-  wix extension add -g WixToolset.Util.wixext >/dev/null 2>&1 || true
-  if ! run_wix_build_with_util; then
-    echo "[warn] WixToolset.Util.wixext is unavailable, building MSI without util extension"
-    run_wix_build_without_util
+ensure_wix_util_extension() {
+  local wix_ext="WixToolset.Util.wixext/$WIX_VERSION"
+
+  if has_wix_util_extension; then
+    return 0
   fi
-fi
+
+  wix extension add "$wix_ext" -s https://api.nuget.org/v3/index.json || true
+  wix extension add -g "$wix_ext" -s https://api.nuget.org/v3/index.json || true
+
+  if has_wix_util_extension; then
+    return 0
+  fi
+
+  echo "[error] required WiX extension is unavailable: $wix_ext"
+  echo "[error] MSI build requires WixToolset.Util.wixext and will not fallback"
+  wix extension list || true
+  return 1
+}
+
+ensure_wix_util_extension
+run_wix_build_with_util
 
 if [[ ! -f "$tmp_msi" ]]; then
   echo "[error] expected msi is missing: $tmp_msi"
