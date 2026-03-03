@@ -795,6 +795,24 @@
  
  	// for debug bundle generation
  	ProfileConfig *profilemanager.Config
+@@ -1011,6 +1014,19 @@ func (e *Engine) updateConfig(conf *mgmProto.PeerConfig) error {
+ 	if e.wgInterface.Address().String() != conf.Address {
+ 		log.Infof("peer IP address has changed from %s to %s", e.wgInterface.Address().String(), conf.Address)
+ 	}
++
++	nextAmneziaConfig := amneziawg.FromProtobuf(conf.GetAmneziaConfig())
++	if e.config.AmneziaConfig != nextAmneziaConfig {
++		log.Infof("amneziaWG config changed, restarting engine to apply new settings")
++		e.config.AmneziaConfig = nextAmneziaConfig
++
++		CtxGetState(e.ctx).Set(StatusConnecting)
++		_ = CtxGetState(e.ctx).Wrap(ErrResetConnection)
++		e.clientCancel()
++		return nil
++	}
+ 
+ 	if conf.GetSshConfig() != nil {
+ 		if err := e.updateSSH(conf.GetSshConfig()); err != nil {
 @@ -1738,14 +1740,15 @@ func (e *Engine) newWgIface() (*iface.WGIface, error) {
  	}
  
@@ -2519,4 +2537,3 @@ index 619f8461..143cc5c5 100644
  RUN go mod download
  
  COPY . .
-
