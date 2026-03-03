@@ -795,7 +795,7 @@
  
  	// for debug bundle generation
  	ProfileConfig *profilemanager.Config
-@@ -1011,6 +1014,19 @@ func (e *Engine) updateConfig(conf *mgmProto.PeerConfig) error {
+@@ -1011,6 +1014,17 @@ func (e *Engine) updateConfig(conf *mgmProto.PeerConfig) error {
  	if e.wgInterface.Address().String() != conf.Address {
  		log.Infof("peer IP address has changed from %s to %s", e.wgInterface.Address().String(), conf.Address)
  	}
