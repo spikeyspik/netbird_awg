@@ -1,0 +1,73 @@
+version: 2
+
+project_name: netbird
+
+builds:
+  - id: netbird
+    dir: client
+    binary: netbird
+    env: [ CGO_ENABLED=0 ]
+    goos:
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X github.com/netbirdio/netbird/version.version={{ .Env.NETBIRD_RELEASE_TAG }} -X main.commit={{.Commit}} -X main.date={{.CommitDate}} -X main.builtBy=goreleaser
+    mod_timestamp: "{{ .CommitTimestamp }}"
+    tags:
+      - load_wgnt_from_rsrc
+
+archives:
+  - id: netbird-binaries
+    builds:
+      - netbird
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    formats:
+      - binary
+
+nfpms:
+  - maintainer: Netbird <dev@netbird.io>
+    description: Netbird client.
+    homepage: https://netbird.io/
+    id: netbird-deb
+    bindir: /usr/bin
+    builds:
+      - netbird
+    formats:
+      - deb
+
+    scripts:
+      postinstall: "release_files/post_install.sh"
+      preremove: "release_files/pre_remove.sh"
+
+  - maintainer: Netbird <dev@netbird.io>
+    description: Netbird client.
+    homepage: https://netbird.io/
+    id: netbird-rpm
+    bindir: /usr/bin
+    builds:
+      - netbird
+    formats:
+      - rpm
+
+    scripts:
+      postinstall: "release_files/post_install.sh"
+      preremove: "release_files/pre_remove.sh"
+
+  - maintainer: Netbird <dev@netbird.io>
+    description: Netbird client.
+    homepage: https://netbird.io/
+    id: netbird-archlinux
+    bindir: /usr/bin
+    builds:
+      - netbird
+    formats:
+      - archlinux
+
+    scripts:
+      postinstall: "release_files/post_install.sh"
+      preremove: "release_files/pre_remove.sh"
+
+release:
+  replace_existing_artifacts: true

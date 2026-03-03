@@ -36,7 +36,7 @@ staging_dir="$DIST_DIR/netbird_windows_amd64"
 rm -rf "$staging_dir"
 mkdir -p "$staging_dir"
 
-netbird_exe="$(find "$DIST_DIR" -type f -path "*/netbird_windows_amd64*/netbird.exe" | sort | head -n 1 || true)"
+netbird_exe="$(find "$DIST_DIR" -type f -path "*_windows_amd64*/netbird.exe" | sort | head -n 1 || true)"
 ui_exe="$(
   {
     find "$DIST_DIR" -type f -path "*/netbird-ui-windows-amd64_windows_amd64*/netbird-ui.exe" 2>/dev/null
@@ -45,15 +45,11 @@ ui_exe="$(
 )"
 
 if [[ -z "$netbird_exe" ]]; then
-  echo "[info] netbird.exe for windows amd64 not found in dist/, building directly"
-  (
-    cd "$NETBIRD_DIR"
-    GOOS=windows GOARCH=amd64 CGO_ENABLED=0 \
-      go build -trimpath -tags load_wgnt_from_rsrc -o "$staging_dir/Netbird.exe" ./client
-  )
-else
-  cp "$netbird_exe" "$staging_dir/Netbird.exe"
+  echo "[error] netbird.exe for windows amd64 not found in dist/"
+  find "$DIST_DIR" -maxdepth 3 -type f | sort
+  exit 1
 fi
+cp "$netbird_exe" "$staging_dir/Netbird.exe"
 
 if [[ -z "$ui_exe" ]]; then
   echo "[error] netbird-ui.exe for windows amd64 not found in dist/"

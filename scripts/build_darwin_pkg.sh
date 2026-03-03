@@ -33,9 +33,17 @@ fi
 
 ui_amd64="$(find "$DIST_DIR" -type f -path "*/netbird-ui-darwin_darwin_amd64*/netbird-ui" | sort | head -n 1 || true)"
 ui_arm64="$(find "$DIST_DIR" -type f -path "*/netbird-ui-darwin_darwin_arm64*/netbird-ui" | sort | head -n 1 || true)"
+netbird_amd64="$(find "$DIST_DIR" -type f -path "*_darwin_amd64*/netbird" | sort | head -n 1 || true)"
+netbird_arm64="$(find "$DIST_DIR" -type f -path "*_darwin_arm64*/netbird" | sort | head -n 1 || true)"
 
 if [[ -z "$ui_amd64" || -z "$ui_arm64" ]]; then
   echo "[error] netbird-ui darwin binaries are missing in dist/"
+  find "$DIST_DIR" -maxdepth 3 -type f | sort
+  exit 1
+fi
+
+if [[ -z "$netbird_amd64" || -z "$netbird_arm64" ]]; then
+  echo "[error] netbird darwin binaries are missing in dist/"
   find "$DIST_DIR" -maxdepth 3 -type f | sort
   exit 1
 fi
@@ -78,7 +86,8 @@ create_app_icon_icns() {
 
 build_pkg() {
   local arch="$1"
-  local ui_bin="$2"
+  local netbird_bin="$2"
+  local ui_bin="$3"
   local root
   root="$(mktemp -d)"
 
@@ -91,11 +100,7 @@ build_pkg() {
   local app_resources="$app_contents/Resources"
   mkdir -p "$app_macos" "$app_resources"
 
-  (
-    cd "$NETBIRD_DIR"
-    GOOS=darwin GOARCH="$arch" CGO_ENABLED=0 \
-      go build -trimpath -tags load_wgnt_from_rsrc -o "$root/usr/local/bin/netbird" ./client
-  )
+  cp "$netbird_bin" "$root/usr/local/bin/netbird"
 
   cp "$root/usr/local/bin/netbird" "$app_macos/netbird"
   cp "$ui_bin" "$app_macos/netbird-ui"
@@ -154,5 +159,5 @@ PLIST
   echo "[ok] darwin pkg created: $out_pkg"
 }
 
-build_pkg amd64 "$ui_amd64"
-build_pkg arm64 "$ui_arm64"
+build_pkg amd64 "$netbird_amd64" "$ui_amd64"
+build_pkg arm64 "$netbird_arm64" "$ui_arm64"
