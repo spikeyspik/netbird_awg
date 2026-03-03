@@ -45,7 +45,7 @@ NETBIRD_AMNEZIA_I5=
 
 - The patched version is backward-compatible unless you enable AmneziaWG-specific settings.
 - AmneziaWG settings are instance-wide.
-- In theory, patched and unpatched clients can be used separately in one instance, but each client can use either
+- In theory, patched and unpatched clients can be used simultaneously in one instance, but each client can use either
   AmneziaWG or
   vanilla WireGuard, not both.
 - After changing AmneziaWG settings, clients must reconnect once (`netbird down && netbird up`).
