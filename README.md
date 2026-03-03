@@ -20,7 +20,8 @@ one weekend, so treat it as a practical side project rather than a polished one.
 
 1. Install and configure a self-hosted NetBird deployment (follow the official NetBird docs).
 2. Replace either the `management` or `netbird-server` Docker container image with one of the images above.
-3. Configure AmneziaWG values. Leave them empty if you want to use vanilla WireGuard.
+3. Update all peers to patched client versions.
+4. Configure AmneziaWG values. Leave them empty if you want to use vanilla WireGuard.
 
 ```dotenv
 # amnezia
