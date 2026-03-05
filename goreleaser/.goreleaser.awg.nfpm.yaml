@@ -20,6 +20,29 @@ builds:
     tags:
       - load_wgnt_from_rsrc
 
+  - id: netbird-openwrt
+    dir: client
+    binary: netbird
+    env: [ CGO_ENABLED=0 ]
+    goos:
+      - linux
+    goarch:
+      - 386
+      - amd64
+      - arm
+      - arm64
+      - mips
+      - mipsle
+    goarm:
+      - 7
+    gomips:
+      - softfloat
+    ldflags:
+      - -s -w -X github.com/netbirdio/netbird/version.version={{ .Env.NETBIRD_RELEASE_TAG }} -X main.commit={{.Commit}} -X main.date={{.CommitDate}} -X main.builtBy=goreleaser
+    mod_timestamp: "{{ .CommitTimestamp }}"
+    tags:
+      - load_wgnt_from_rsrc
+
 nfpms:
   - maintainer: Netbird <dev@netbird.io>
     description: Netbird client.
@@ -62,6 +85,30 @@ nfpms:
     scripts:
       postinstall: "release_files/post_install.sh"
       preremove: "release_files/pre_remove.sh"
+
+  - maintainer: Netbird <dev@netbird.io>
+    description: Netbird client.
+    homepage: https://netbird.io/
+    id: netbird-ipk
+    bindir: /usr/bin
+    builds:
+      - netbird-openwrt
+    formats:
+      - ipk
+
+    contents:
+      - src: release_files/openwrt/netbird.init
+        dst: /etc/init.d/netbird
+        file_info:
+          mode: 493
+      - dst: /etc/netbird
+        type: dir
+        file_info:
+          mode: 493
+
+    scripts:
+      postinstall: "release_files/openwrt/post_install_ipk.sh"
+      preremove: "release_files/openwrt/pre_remove_ipk.sh"
 
 snapshot:
   version_template: "{{ .Env.NETBIRD_PACKAGE_VERSION }}"

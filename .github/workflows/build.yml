@@ -86,16 +86,20 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Repack OpenWrt .ipk to target architectures
+        run: ./scripts/repack_openwrt_ipk.sh "${{ github.workspace }}/workdir/repos/netbird/dist-nfpm"
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: build-linux-${{ github.run_number }}-${{ github.sha }}
           path: |
-            ${{ github.workspace }}/workdir/repos/netbird/dist/netbird_*_linux_amd64*
-            ${{ github.workspace }}/workdir/repos/netbird/dist/netbird_*_linux_arm64*
+            ${{ github.workspace }}/workdir/repos/netbird/dist/netbird_*_linux_*
+            ${{ github.workspace }}/workdir/repos/netbird/dist/netbird_*_js_wasm*
             ${{ github.workspace }}/workdir/repos/netbird/dist-nfpm/*.deb
             ${{ github.workspace }}/workdir/repos/netbird/dist-nfpm/*.rpm
             ${{ github.workspace }}/workdir/repos/netbird/dist-nfpm/*.pkg.tar.zst
+            ${{ github.workspace }}/workdir/repos/netbird/dist-nfpm/*.ipk
           if-no-files-found: error
           retention-days: 7
 

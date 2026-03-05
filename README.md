@@ -8,7 +8,10 @@ one weekend, so treat it as a practical side project rather than a polished one.
 ## What This Repository Produces
 
 - Linux binaries (`amd64`, `arm64`)
-- Linux packages (`.deb`, `.rpm`, Arch Linux `.pkg.tar.zst`)
+- WebAssembly binary (`js/wasm`)
+- OpenWrt-compatible Linux binaries (`armv7`, `arm64`, `mips`, `mipsle`)
+- Linux packages (`.deb`, `.rpm`, Arch Linux `.pkg.tar.zst`, OpenWrt `.ipk`)
+- OpenWrt `.ipk` variants for target architectures (`x86_64`, `i386_pentium4`, `aarch64_*`, `arm_cortex-*`, `mips_74kc`, `mipsel_24kc`)
 - Windows installer (`.exe`)
 - macOS packages (`.pkg` for `amd64` and `arm64`)
 - Docker images:

@@ -12,6 +12,7 @@ NETBIRD_DIR="${NETBIRD_DIR:-$WORKDIR/repos/netbird}"
 AWG_GO_DIR="${AWG_GO_DIR:-$WORKDIR/repos/amneziawg-go}"
 PATCH_DIR="${PATCH_DIR:-$ROOT_DIR/patches}"
 CONFIG_DIR="${CONFIG_DIR:-$ROOT_DIR/goreleaser}"
+OPENWRT_FILES_DIR="${OPENWRT_FILES_DIR:-$CONFIG_DIR/openwrt}"
 
 UI_BRAND_NAME="${UI_BRAND_NAME:-NetBird AWG}"
 UI_BRAND_COLOR_HEX="${UI_BRAND_COLOR_HEX:-2EA3FF}"
@@ -135,6 +136,28 @@ install_goreleaser_configs() {
   done
 }
 
+install_openwrt_release_files() {
+  local src_dir="$OPENWRT_FILES_DIR"
+  local dst_dir="$NETBIRD_DIR/release_files/openwrt"
+  local file
+
+  if [[ ! -d "$src_dir" ]]; then
+    log error "missing openwrt files directory: $src_dir"
+    exit 1
+  fi
+
+  mkdir -p "$dst_dir"
+  for file in netbird.init post_install_ipk.sh pre_remove_ipk.sh; do
+    if [[ ! -f "$src_dir/$file" ]]; then
+      log error "missing openwrt file: $src_dir/$file"
+      exit 1
+    fi
+    cp "$src_dir/$file" "$dst_dir/$file"
+    chmod 0755 "$dst_dir/$file"
+    log ok "installed openwrt file: $dst_dir/$file"
+  done
+}
+
 main() {
   require_repo "$NETBIRD_DIR" "netbird"
   require_repo "$AWG_GO_DIR" "amneziawg-go"
@@ -144,6 +167,7 @@ main() {
   set_netbird_version
   brand_ui
   install_goreleaser_configs
+  install_openwrt_release_files
 
   log ok "sources are prepared for goreleaser"
 }
