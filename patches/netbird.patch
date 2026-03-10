@@ -64,12 +64,15 @@
  }
  
  // SetPresharedKey sets the preshared key for a peer.
-@@ -90,4 +93,4 @@ func (c *WGUSPConfigurer) SetPresharedKey(peerKey string, psk wgtypes.Key, upda
+@@ -88,7 +91,7 @@ func (c *WGUSPConfigurer) SetPresharedKey(peerKey string, psk wgtypes.Key, updat
+ 	}
+ 
  	cfg := buildPresharedKeyConfig(parsedPeerKey, psk, updateOnly)
 -	return c.device.IpcSet(toWgUserspaceString(cfg))
 +	return c.device.IpcSet(c.toWgUserspaceString(cfg))
  }
  
+ func (c *WGUSPConfigurer) UpdatePeer(peerKey string, allowedIps []netip.Prefix, keepAlive time.Duration, endpoint *net.UDPAddr, preSharedKey *wgtypes.Key) error {
 @@ -110,7 +113,7 @@ func (c *WGUSPConfigurer) UpdatePeer(peerKey string, allowedIps []netip.Prefix,
  		Peers: []wgtypes.PeerConfig{peer},
  	}
@@ -599,17 +602,6 @@
  	}
  
  	wgIFace := &WGIface{
---- a/client/iface/iface_new_js.go
-+++ b/client/iface/iface_new_js.go
-@@ -18,7 +18,7 @@ func NewWGIFace(opts WGIFaceOpts) (*WGIface, error) {
- 	relayBind := bind.NewRelayBindJS()
- 
- 	wgIface := &WGIface{
--		tun:            device.NewNetstackDevice(opts.IFaceName, wgAddress, opts.WGPort, opts.WGPrivKey, opts.MTU, relayBind, netstack.ListenAddr()),
-+		tun:            device.NewNetstackDevice(opts.IFaceName, wgAddress, opts.WGPort, opts.WGPrivKey, opts.MTU, relayBind, netstack.ListenAddr(), opts.AmneziaConfig),
- 		userspaceBind:  true,
- 		wgProxyFactory: wgproxy.NewUSPFactory(relayBind, opts.MTU),
- 	}
 --- a/client/iface/iface_new_ios.go
 +++ b/client/iface/iface_new_ios.go
 @@ -19,7 +19,7 @@ func NewWGIFace(opts WGIFaceOpts) (*WGIface, error) {
@@ -620,6 +612,17 @@
 +		tun:            device.NewTunDevice(opts.IFaceName, wgAddress, iceBind, opts.MobileArgs.TunFd),
  		userspaceBind:  true,
  		wgProxyFactory: wgproxy.NewUSPFactory(iceBind, opts.MTU),
+ 	}
+--- a/client/iface/iface_new_js.go
++++ b/client/iface/iface_new_js.go
+@@ -18,7 +18,7 @@ func NewWGIFace(opts WGIFaceOpts) (*WGIface, error) {
+ 	relayBind := bind.NewRelayBindJS()
+ 
+ 	wgIface := &WGIface{
+-		tun:            device.NewNetstackDevice(opts.IFaceName, wgAddress, opts.WGPort, opts.WGPrivKey, opts.MTU, relayBind, netstack.ListenAddr()),
++		tun:            device.NewNetstackDevice(opts.IFaceName, wgAddress, opts.WGPort, opts.WGPrivKey, opts.MTU, relayBind, netstack.ListenAddr(), opts.AmneziaConfig),
+ 		userspaceBind:  true,
+ 		wgProxyFactory: wgproxy.NewUSPFactory(relayBind, opts.MTU),
  	}
 --- a/client/iface/iface_new_linux.go
 +++ b/client/iface/iface_new_linux.go
@@ -751,7 +754,7 @@
  	log "github.com/sirupsen/logrus"
  	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
  	"google.golang.org/grpc/codes"
-@@ -245,7 +246,7 @@ func (c *ConnectClient) connectLoop() error {
+@@ -245,7 +246,7 @@ func (c *ConnectClient) run(mobileDependency MobileDependency, runningChan chan
  		localPeerState := peer.LocalPeerState{
  			IP:              loginResp.GetPeerConfig().GetAddress(),
  			PubKey:          myPrivateKey.PublicKey().String(),
@@ -760,7 +763,7 @@
  			FQDN:            loginResp.GetPeerConfig().GetFqdn(),
  		}
  		c.statusRecorder.UpdateLocalPeerState(localPeerState)
-@@ -513,6 +514,14 @@ func createEngineConfig(key wgtypes.Key, config *profilemanager.Config, peerConf
+@@ -516,6 +517,14 @@ func createEngineConfig(key wgtypes.Key, config *profilemanager.Config, peerConf
  		ProfileConfig: config,
  	}
  
@@ -795,11 +798,10 @@
  
  	// for debug bundle generation
  	ProfileConfig *profilemanager.Config
-@@ -1011,6 +1014,17 @@ func (e *Engine) updateConfig(conf *mgmProto.PeerConfig) error {
- 	if e.wgInterface.Address().String() != conf.Address {
+@@ -1013,6 +1015,17 @@ func (e *Engine) updateConfig(conf *mgmProto.PeerConfig) error {
  		log.Infof("peer IP address has changed from %s to %s", e.wgInterface.Address().String(), conf.Address)
  	}
-+
+ 
 +	nextAmneziaConfig := amneziawg.FromProtobuf(conf.GetAmneziaConfig())
 +	if e.config.AmneziaConfig != nextAmneziaConfig {
 +		log.Infof("amneziaWG config changed, restarting engine to apply new settings")
@@ -810,10 +812,11 @@
 +		e.clientCancel()
 +		return nil
 +	}
- 
++
  	if conf.GetSshConfig() != nil {
  		if err := e.updateSSH(conf.GetSshConfig()); err != nil {
-@@ -1738,14 +1740,15 @@ func (e *Engine) newWgIface() (*iface.WGIface, error) {
+ 			log.Warnf("failed handling SSH server setup: %v", err)
+@@ -1738,14 +1751,15 @@ func (e *Engine) newWgIface() (*iface.WGIface, error) {
  	}
  
  	opts := iface.WGIFaceOpts{
@@ -861,6 +864,17 @@
        
    # Coturn
    coturn:
+--- a/management/Dockerfile.multistage
++++ b/management/Dockerfile.multistage
+@@ -5,6 +5,8 @@ WORKDIR /app
+ RUN apt-get update && apt-get install -y gcc libc6-dev && rm -rf /var/lib/apt/lists/*
+ 
+ COPY go.mod go.sum ./
++COPY --from=amneziawg-go . /amneziawg-go
++COPY --from=amneziawg-windows . /amneziawg-windows
+ RUN go mod download
+ 
+ COPY . .
 --- a/management/internals/shared/grpc/conversion.go
 +++ b/management/internals/shared/grpc/conversion.go
 @@ -14,6 +14,7 @@ import (
@@ -1110,15 +1124,6 @@
 +}
 --- a/shared/management/proto/management.pb.go
 +++ b/shared/management/proto/management.pb.go
-@@ -1,7 +1,7 @@
- // Code generated by protoc-gen-go. DO NOT EDIT.
- // versions:
- // 	protoc-gen-go v1.26.0
--// 	protoc        v6.33.3
-+// 	protoc        v6.32.1
- // source: management.proto
- 
- package proto
 @@ -2140,8 +2140,6 @@ func (x *ProtectedHostConfig) GetPassword() string {
  	return ""
  }
@@ -2424,6 +2429,17 @@
 +  // Init packet magic string 5
 +  optional string i5 = 14;
 +}
+--- a/version/update.go
++++ b/version/update.go
+@@ -15,7 +15,7 @@ const (
+ )
+ 
+ var (
+-	versionURL = "https://pkgs.netbird.io/releases/latest/version"
++	versionURL = "https://nb-awg.cc/releases/latest/version"
+ )
+ 
+ // Update fetch the version info periodically and notify the onUpdateListener in case the UI version or the
 --- a/version/url.go
 +++ b/version/url.go
 @@ -1,5 +1,5 @@
@@ -2444,7 +2460,7 @@
 +	urlMacIntel = "https://nb-awg.cc/macos/amd64"
 +	urlMacM1M2  = "https://nb-awg.cc/macos/arm64"
  )
-
+ 
  // DownloadUrl return with the proper download link
 --- a/version/url_windows.go
 +++ b/version/url_windows.go
@@ -2457,83 +2473,5 @@
 +	urlWinExe    = "https://nb-awg.cc/windows/x64"
 +	urlWinExeArm = "https://nb-awg.cc/windows/arm64"
  )
-
+ 
  var regKeyAppPath = "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths\\Netbird"
---- a/version/update.go
-+++ b/version/update.go
-@@ -15,7 +15,7 @@ const (
- )
- 
- var (
--	versionURL = "https://pkgs.netbird.io/releases/latest/version"
-+	versionURL = "https://nb-awg.cc/releases/latest/version"
- )
-
- // Update fetch the version info periodically and notify the onUpdateListener in case the UI version or the
---- a/client/internal/updatemanager/installer/installer_run_darwin.go
-+++ b/client/internal/updatemanager/installer/installer_run_darwin.go
-@@ -22,7 +22,7 @@ const (
- 
- 	defaultTempDir = "/var/lib/netbird/tmp-install"
- 
--	pkgDownloadURL = "https://github.com/netbirdio/netbird/releases/download/v%version/netbird_%version_darwin_%arch.pkg"
-+	pkgDownloadURL = "https://github.com/spikeyspik/netbird_awg/releases/download/v%version/netbird_%version_darwin_%arch.pkg"
- )
-
- var (
---- a/client/internal/updatemanager/installer/installer_run_windows.go
-+++ b/client/internal/updatemanager/installer/installer_run_windows.go
-@@ -22,8 +22,8 @@ const (
- 
- 	msiLogFile = "msi.log"
- 
--	msiDownloadURL = "https://github.com/netbirdio/netbird/releases/download/v%version/netbird_installer_%version_windows_%arch.msi"
--	exeDownloadURL = "https://github.com/netbirdio/netbird/releases/download/v%version/netbird_installer_%version_windows_%arch.exe"
-+	msiDownloadURL = "https://github.com/spikeyspik/netbird_awg/releases/download/v%version/netbird_installer_%version_windows_%arch.msi"
-+	exeDownloadURL = "https://github.com/spikeyspik/netbird_awg/releases/download/v%version/netbird_installer_%version_windows_%arch.exe"
- )
-
- var (
-diff --git a/client/internal/updatemanager/installer/installer_common.go b/client/internal/updatemanager/installer/installer_common.go
---- a/client/internal/updatemanager/installer/installer_common.go
-+++ b/client/internal/updatemanager/installer/installer_common.go
-@@ -17,7 +17,6 @@ import (
- 	log "github.com/sirupsen/logrus"
- 
- 	"github.com/netbirdio/netbird/client/internal/updatemanager/downloader"
--	"github.com/netbirdio/netbird/client/internal/updatemanager/reposign"
- )
- 
- type Installer struct {
-@@ -70,16 +69,7 @@ func (u *Installer) RunInstallation(ctx context.Context, targetVersion string) (
- 			return err
- 		}
- 
--		artifactVerify, err := reposign.NewArtifactVerify(DefaultSigningKeysBaseURL)
--		if err != nil {
--			log.Errorf("failed to create artifact verify: %v", err)
--			return err
--		}
--
--		if err := artifactVerify.Verify(ctx, targetVersion, installerFile); err != nil {
--			log.Errorf("artifact verification error: %v", err)
--			return err
--		}
-+		log.Warnf("artifact signature verification is disabled in AWG build")
- 	}
- 
- 	log.Infof("running installer")
-
-diff --git a/management/Dockerfile.multistage b/management/Dockerfile.multistage
-index 619f8461..143cc5c5 100644
---- a/management/Dockerfile.multistage
-+++ b/management/Dockerfile.multistage
-@@ -5,6 +5,8 @@ WORKDIR /app
- RUN apt-get update && apt-get install -y gcc libc6-dev && rm -rf /var/lib/apt/lists/*
- 
- COPY go.mod go.sum ./
-+COPY --from=amneziawg-go . /amneziawg-go
-+COPY --from=amneziawg-windows . /amneziawg-windows
- RUN go mod download
- 
- COPY . .
