@@ -129,6 +129,9 @@ jobs:
       - name: Clone sources
         run: ./scripts/clone_sources.sh
 
+      - name: Install protoc
+        uses: arduino/setup-protoc@v3
+
       - name: Prepare sources
         run: ./scripts/prepare_sources.sh
 
@@ -188,6 +191,9 @@ jobs:
           cache-dependency-path: |
             ${{ github.workspace }}/workdir/repos/netbird/go.mod
             ${{ github.workspace }}/workdir/repos/netbird/go.sum
+
+      - name: Install protoc
+        uses: arduino/setup-protoc@v3
 
       - name: Prepare sources
         run: ./scripts/prepare_sources.sh
@@ -253,6 +259,9 @@ jobs:
           cache-dependency-path: |
             ${{ github.workspace }}/workdir/repos/netbird/go.mod
             ${{ github.workspace }}/workdir/repos/netbird/go.sum
+
+      - name: Install protoc
+        uses: arduino/setup-protoc@v3
 
       - name: Prepare sources
         run: ./scripts/prepare_sources.sh

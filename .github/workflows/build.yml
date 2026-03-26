@@ -47,6 +47,9 @@ jobs:
             ${{ github.workspace }}/workdir/repos/netbird/go.mod
             ${{ github.workspace }}/workdir/repos/netbird/go.sum
 
+      - name: Install protoc
+        uses: arduino/setup-protoc@v3
+
       - name: Prepare sources
         run: ./scripts/prepare_sources.sh
 
@@ -137,6 +140,9 @@ jobs:
             ${{ github.workspace }}/workdir/repos/netbird/go.mod
             ${{ github.workspace }}/workdir/repos/netbird/go.sum
 
+      - name: Install protoc
+        uses: arduino/setup-protoc@v3
+
       - name: Install NSIS
         shell: pwsh
         run: |
@@ -196,6 +202,9 @@ jobs:
           cache-dependency-path: |
             ${{ github.workspace }}/workdir/repos/netbird/go.mod
             ${{ github.workspace }}/workdir/repos/netbird/go.sum
+
+      - name: Install protoc
+        uses: arduino/setup-protoc@v3
 
       - name: Prepare sources
         run: ./scripts/prepare_sources.sh
