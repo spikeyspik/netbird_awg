@@ -754,7 +754,7 @@
  	log "github.com/sirupsen/logrus"
  	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
  	"google.golang.org/grpc/codes"
-@@ -245,7 +246,7 @@ func (c *ConnectClient) run(mobileDependency MobileDependency, runningChan chan
+@@ -296,7 +297,7 @@ func (c *ConnectClient) run(mobileDependency MobileDependency, runningChan chan
  		localPeerState := peer.LocalPeerState{
  			IP:              loginResp.GetPeerConfig().GetAddress(),
  			PubKey:          myPrivateKey.PublicKey().String(),
@@ -763,7 +763,7 @@
  			FQDN:            loginResp.GetPeerConfig().GetFqdn(),
  		}
  		c.statusRecorder.UpdateLocalPeerState(localPeerState)
-@@ -516,6 +517,14 @@ func createEngineConfig(key wgtypes.Key, config *profilemanager.Config, peerConf
+@@ -568,6 +569,14 @@ func createEngineConfig(key wgtypes.Key, config *profilemanager.Config, peerConf
  		ProfileConfig: config,
  	}
  
@@ -788,7 +788,7 @@
  	"github.com/pion/ice/v4"
  	"github.com/pion/stun/v3"
  	log "github.com/sirupsen/logrus"
-@@ -133,7 +134,8 @@ type EngineConfig struct {
+@@ -134,7 +135,8 @@ type EngineConfig struct {
  
  	LazyConnectionEnabled bool
  
@@ -798,8 +798,8 @@
  
  	// for debug bundle generation
  	ProfileConfig *profilemanager.Config
-@@ -1013,6 +1015,17 @@ func (e *Engine) updateConfig(conf *mgmProto.PeerConfig) error {
- 		log.Infof("peer IP address has changed from %s to %s", e.wgInterface.Address().String(), conf.Address)
+@@ -1031,6 +1033,17 @@ func (e *Engine) updateConfig(conf *mgmProto.PeerConfig) error {
+ 		return ErrResetConnection
  	}
  
 +	nextAmneziaConfig := amneziawg.FromProtobuf(conf.GetAmneziaConfig())
@@ -816,7 +816,7 @@
  	if conf.GetSshConfig() != nil {
  		if err := e.updateSSH(conf.GetSshConfig()); err != nil {
  			log.Warnf("failed handling SSH server setup: %v", err)
-@@ -1738,14 +1751,15 @@ func (e *Engine) newWgIface() (*iface.WGIface, error) {
+@@ -1765,14 +1778,15 @@ func (e *Engine) newWgIface() (*iface.WGIface, error) {
  	}
  
  	opts := iface.WGIFaceOpts{
@@ -885,9 +885,9 @@
  	nbpeer "github.com/netbirdio/netbird/management/server/peer"
  	"github.com/netbirdio/netbird/management/server/posture"
  	"github.com/netbirdio/netbird/management/server/types"
-@@ -109,6 +110,22 @@ func toPeerConfig(peer *nbpeer.Peer, network *types.Network, dnsName string, set
- 		AutoUpdate: &proto.AutoUpdateSettings{
- 			Version: settings.AutoUpdateVersion,
+@@ -110,6 +111,22 @@ func toPeerConfig(peer *nbpeer.Peer, network *types.Network, dnsName string, set
+ 			Version:      settings.AutoUpdateVersion,
+ 			AlwaysUpdate: settings.AutoUpdateAlways,
  		},
 +		AmneziaConfig: &proto.AmneziaConfig{
 +			Jc:   &amneziawg.Store.Jc,
@@ -1143,7 +1143,7 @@
  }
  
  message AutoUpdateSettings {
-@@ -681,3 +682,36 @@ message StopExposeRequest {
+@@ -684,3 +685,36 @@ message StopExposeRequest {
  }
  
  message StopExposeResponse {}
