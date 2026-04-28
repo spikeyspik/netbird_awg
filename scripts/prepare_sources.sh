@@ -64,6 +64,14 @@ apply_patches() {
   log ok "patches are applied"
 }
 
+regenerate_protos() {
+  log debug "regenerating protobuf glue"
+  pushd "$NETBIRD_DIR/shared/management/proto" >/dev/null
+  ./generate.sh
+  popd >/dev/null
+  log ok "regenerated protobuf glue"
+}
+
 replace_imports() {
   while IFS= read -r rel; do
     local file="$NETBIRD_DIR/$rel"
@@ -140,6 +148,7 @@ main() {
   require_repo "$AWG_GO_DIR" "amneziawg-go"
 
   apply_patches
+  regenerate_protos
   replace_imports
   set_netbird_version
   brand_ui
