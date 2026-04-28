@@ -2,6 +2,7 @@ name: NetBird AWG Build
 
 on:
   push:
+  workflow_dispatch:
   workflow_call:
     inputs:
       base_tag:
