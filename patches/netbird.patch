@@ -1,3 +1,27 @@
+--- /dev/null
++++ b/client/iface/configurer/amnezia_config.go
+@@ -0,0 +1,21 @@
++package configurer
++
++// AmneziaConfig describes AmneziaWG obfuscation parameters.
++// If nil or all fields are zero, it behaves as standard WireGuard.
++type AmneziaConfig interface {
++	IsEmpty() bool
++	GetJc() int32
++	GetJmin() int32
++	GetJmax() int32
++	GetS1() int32
++	GetS2() int32
++	GetH1() uint32
++	GetH2() uint32
++	GetH3() uint32
++	GetH4() uint32
++	GetI1() string
++	GetI2() string
++	GetI3() string
++	GetI4() string
++	GetI5() string
++}
 --- a/client/iface/configurer/usp.go
 +++ b/client/iface/configurer/usp.go
 @@ -40,25 +40,28 @@ type WGUSPConfigurer struct {
@@ -640,6 +664,86 @@
  	}
  
  	wgIFace := &WGIface{
+--- /dev/null
++++ b/client/internal/amneziawg/amneziawg.go
+@@ -0,0 +1,77 @@
++package amneziawg
++
++import "github.com/netbirdio/netbird/shared/management/proto"
++
++// AmneziaConfig describes AmneziaWG obfuscation parameters.
++// If nil or all fields are zero, it behaves as standard WireGuard.
++type AmneziaConfig struct {
++	Jc   int32
++	Jmin int32
++	Jmax int32
++	S1   int32
++	S2   int32
++	H1   uint32
++	H2   uint32
++	H3   uint32
++	H4   uint32
++	I1   string
++	I2   string
++	I3   string
++	I4   string
++	I5   string
++}
++
++func (cfg AmneziaConfig) IsEmpty() bool {
++
++	return cfg.Jc == 0 &&
++		cfg.Jmin == 0 &&
++		cfg.Jmax == 0 &&
++		cfg.S1 == 0 &&
++		cfg.S2 == 0 &&
++		cfg.H1 == 0 &&
++		cfg.H2 == 0 &&
++		cfg.H3 == 0 &&
++		cfg.H4 == 0 &&
++		cfg.I1 == "" &&
++		cfg.I2 == "" &&
++		cfg.I3 == "" &&
++		cfg.I4 == "" &&
++		cfg.I5 == ""
++}
++func (cfg AmneziaConfig) GetJc() int32   { return cfg.Jc }
++func (cfg AmneziaConfig) GetJmin() int32 { return cfg.Jmin }
++func (cfg AmneziaConfig) GetJmax() int32 { return cfg.Jmax }
++func (cfg AmneziaConfig) GetS1() int32   { return cfg.S1 }
++func (cfg AmneziaConfig) GetS2() int32   { return cfg.S2 }
++func (cfg AmneziaConfig) GetH1() uint32  { return cfg.H1 }
++func (cfg AmneziaConfig) GetH2() uint32  { return cfg.H2 }
++func (cfg AmneziaConfig) GetH3() uint32  { return cfg.H3 }
++func (cfg AmneziaConfig) GetH4() uint32  { return cfg.H4 }
++func (cfg AmneziaConfig) GetI1() string  { return cfg.I1 }
++func (cfg AmneziaConfig) GetI2() string  { return cfg.I2 }
++func (cfg AmneziaConfig) GetI3() string  { return cfg.I3 }
++func (cfg AmneziaConfig) GetI4() string  { return cfg.I4 }
++func (cfg AmneziaConfig) GetI5() string  { return cfg.I5 }
++
++func FromProtobuf(config *proto.AmneziaConfig) AmneziaConfig {
++	if config == nil {
++		return AmneziaConfig{}
++	}
++
++	return AmneziaConfig{
++		Jc:   config.GetJc(),
++		Jmin: config.GetJmin(),
++		Jmax: config.GetJmax(),
++		S1:   config.GetS1(),
++		S2:   config.GetS2(),
++		H1:   config.GetH1(),
++		H2:   config.GetH2(),
++		H3:   config.GetH3(),
++		H4:   config.GetH4(),
++		I1:   config.GetI1(),
++		I2:   config.GetI2(),
++		I3:   config.GetI3(),
++		I4:   config.GetI4(),
++		I5:   config.GetI5(),
++	}
++}
 --- a/client/internal/connect.go
 +++ b/client/internal/connect.go
 @@ -13,6 +13,7 @@ import (
@@ -855,6 +959,220 @@
  	}
  }
  
+--- /dev/null
++++ b/management/server/amneziawg/amneziawg_env.go
+@@ -0,0 +1,211 @@
++package amneziawg
++
++import (
++	"os"
++	"strconv"
++)
++
++const (
++	envAmneziaJc   = "NETBIRD_AMNEZIA_JC"
++	envAmneziaJmin = "NETBIRD_AMNEZIA_JMIN"
++	envAmneziaJmax = "NETBIRD_AMNEZIA_JMAX"
++	envAmneziaS1   = "NETBIRD_AMNEZIA_S1"
++	envAmneziaS2   = "NETBIRD_AMNEZIA_S2"
++	envAmneziaH1   = "NETBIRD_AMNEZIA_H1"
++	envAmneziaH2   = "NETBIRD_AMNEZIA_H2"
++	envAmneziaH3   = "NETBIRD_AMNEZIA_H3"
++	envAmneziaH4   = "NETBIRD_AMNEZIA_H4"
++	envAmneziaI1   = "NETBIRD_AMNEZIA_I1"
++	envAmneziaI2   = "NETBIRD_AMNEZIA_I2"
++	envAmneziaI3   = "NETBIRD_AMNEZIA_I3"
++	envAmneziaI4   = "NETBIRD_AMNEZIA_I4"
++	envAmneziaI5   = "NETBIRD_AMNEZIA_I5"
++)
++
++type StoreStruct struct {
++	Jc   int32
++	Jmin int32
++	Jmax int32
++	S1   int32
++	S2   int32
++	H1   uint32
++	H2   uint32
++	H3   uint32
++	H4   uint32
++	I1   string
++	I2   string
++	I3   string
++	I4   string
++	I5   string
++}
++
++var Store StoreStruct
++
++func init() {
++
++	Store = StoreStruct{
++		Jc:   getAmneziaWgJc(),
++		Jmin: getAmneziaWgJmin(),
++		Jmax: getAmneziaWgJmax(),
++		S1:   getAmneziaWgS1(),
++		S2:   getAmneziaWgS2(),
++		H1:   getAmneziaWgH1(),
++		H2:   getAmneziaWgH2(),
++		H3:   getAmneziaWgH3(),
++		H4:   getAmneziaWgH4(),
++		I1:   getAmneziaWgI1(),
++		I2:   getAmneziaWgI2(),
++		I3:   getAmneziaWgI3(),
++		I4:   getAmneziaWgI4(),
++		I5:   getAmneziaWgI5(),
++	}
++}
++
++func getAmneziaWgJc() int32 {
++
++	strval, ok := os.LookupEnv(envAmneziaJc)
++	if !ok {
++		return 0
++	}
++	val, err := strconv.ParseInt(strval, 10, 32)
++	if err != nil {
++		return 0
++	}
++	return int32(val)
++}
++func getAmneziaWgJmin() int32 {
++
++	strval, ok := os.LookupEnv(envAmneziaJmin)
++	if !ok {
++		return 0
++	}
++	val, err := strconv.ParseInt(strval, 10, 32)
++	if err != nil {
++		return 0
++	}
++	return int32(val)
++}
++func getAmneziaWgJmax() int32 {
++
++	strval, ok := os.LookupEnv(envAmneziaJmax)
++	if !ok {
++		return 0
++	}
++	val, err := strconv.ParseInt(strval, 10, 32)
++	if err != nil {
++		return 0
++	}
++	return int32(val)
++}
++func getAmneziaWgS1() int32 {
++
++	strval, ok := os.LookupEnv(envAmneziaS1)
++	if !ok {
++		return 0
++	}
++	val, err := strconv.ParseInt(strval, 10, 32)
++	if err != nil {
++		return 0
++	}
++	return int32(val)
++}
++func getAmneziaWgS2() int32 {
++
++	strval, ok := os.LookupEnv(envAmneziaS2)
++	if !ok {
++		return 0
++	}
++	val, err := strconv.ParseInt(strval, 10, 32)
++	if err != nil {
++		return 0
++	}
++	return int32(val)
++}
++func getAmneziaWgH1() uint32 {
++
++	strval, ok := os.LookupEnv(envAmneziaH1)
++	if !ok {
++		return 0
++	}
++	val, err := strconv.ParseUint(strval, 10, 32)
++	if err != nil {
++		return 0
++	}
++	return uint32(val)
++}
++func getAmneziaWgH2() uint32 {
++
++	strval, ok := os.LookupEnv(envAmneziaH2)
++	if !ok {
++		return 0
++	}
++	val, err := strconv.ParseUint(strval, 10, 32)
++	if err != nil {
++		return 0
++	}
++	return uint32(val)
++}
++func getAmneziaWgH3() uint32 {
++
++	strval, ok := os.LookupEnv(envAmneziaH3)
++	if !ok {
++		return 0
++	}
++	val, err := strconv.ParseUint(strval, 10, 32)
++	if err != nil {
++		return 0
++	}
++	return uint32(val)
++}
++func getAmneziaWgH4() uint32 {
++
++	strval, ok := os.LookupEnv(envAmneziaH4)
++	if !ok {
++		return 0
++	}
++	val, err := strconv.ParseUint(strval, 10, 32)
++	if err != nil {
++		return 0
++	}
++	return uint32(val)
++}
++func getAmneziaWgI1() string {
++
++	val, ok := os.LookupEnv(envAmneziaI1)
++	if !ok {
++		return ""
++	}
++	return val
++}
++func getAmneziaWgI2() string {
++
++	val, ok := os.LookupEnv(envAmneziaI2)
++	if !ok {
++		return ""
++	}
++	return val
++}
++func getAmneziaWgI3() string {
++
++	val, ok := os.LookupEnv(envAmneziaI3)
++	if !ok {
++		return ""
++	}
++	return val
++}
++func getAmneziaWgI4() string {
++
++	val, ok := os.LookupEnv(envAmneziaI4)
++	if !ok {
++		return ""
++	}
++	return val
++}
++func getAmneziaWgI5() string {
++
++	val, ok := os.LookupEnv(envAmneziaI5)
++	if !ok {
++		return ""
++	}
++	return val
++}
 --- a/shared/management/proto/management.proto
 +++ b/shared/management/proto/management.proto
 @@ -314,8 +314,6 @@ message ProtectedHostConfig {
