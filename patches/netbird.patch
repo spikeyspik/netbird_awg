@@ -840,6 +840,57 @@
  	}
  
  	switch runtime.GOOS {
+--- a/client/internal/updater/installer/installer_common.go
++++ b/client/internal/updater/installer/installer_common.go
+@@ -17,7 +17,6 @@ import (
+ 	log "github.com/sirupsen/logrus"
+ 
+ 	"github.com/netbirdio/netbird/client/internal/updater/downloader"
+-	"github.com/netbirdio/netbird/client/internal/updater/reposign"
+ )
+ 
+ type Installer struct {
+@@ -70,16 +69,6 @@ func (u *Installer) RunInstallation(ctx context.Context, targetVersion string) (
+ 			return err
+ 		}
+ 
+-		artifactVerify, err := reposign.NewArtifactVerify(DefaultSigningKeysBaseURL)
+-		if err != nil {
+-			log.Errorf("failed to create artifact verify: %v", err)
+-			return err
+-		}
+-
+-		if err := artifactVerify.Verify(ctx, targetVersion, installerFile); err != nil {
+-			log.Errorf("artifact verification error: %v", err)
+-			return err
+-		}
+ 	}
+ 
+ 	log.Infof("running installer")
+--- a/client/internal/updater/installer/installer_run_darwin.go
++++ b/client/internal/updater/installer/installer_run_darwin.go
+@@ -22,7 +22,7 @@ const (
+ 
+ 	defaultTempDir = "/var/lib/netbird/tmp-install"
+ 
+-	pkgDownloadURL = "https://github.com/netbirdio/netbird/releases/download/v%version/netbird_%version_darwin_%arch.pkg"
++	pkgDownloadURL = "https://github.com/spikeyspik/netbird_awg/releases/download/v%version/netbird_%version_darwin_%arch.pkg"
+ )
+ 
+ var (
+--- a/client/internal/updater/installer/installer_run_windows.go
++++ b/client/internal/updater/installer/installer_run_windows.go
+@@ -22,8 +22,8 @@ const (
+ 
+ 	msiLogFile = "msi.log"
+ 
+-	msiDownloadURL = "https://github.com/netbirdio/netbird/releases/download/v%version/netbird_installer_%version_windows_%arch.msi"
+-	exeDownloadURL = "https://github.com/netbirdio/netbird/releases/download/v%version/netbird_installer_%version_windows_%arch.exe"
++	msiDownloadURL = "https://github.com/spikeyspik/netbird_awg/releases/download/v%version/netbird_installer_%version_windows_%arch.msi"
++	exeDownloadURL = "https://github.com/spikeyspik/netbird_awg/releases/download/v%version/netbird_installer_%version_windows_%arch.exe"
+ )
+ 
+ var (
 --- a/infrastructure_files/docker-compose.yml.tmpl
 +++ b/infrastructure_files/docker-compose.yml.tmpl
 @@ -95,6 +95,21 @@ services:
