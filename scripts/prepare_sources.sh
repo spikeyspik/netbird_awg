@@ -75,16 +75,13 @@ regenerate_protos() {
 replace_imports() {
   while IFS= read -r rel; do
     local file="$NETBIRD_DIR/$rel"
-    perl -0pi -e 's#golang\.zx2c4\.com/wireguard/windows#github.com/amnezia-vpn/amneziawg-windows#g; s#golang\.zx2c4\.com/wireguard/(?!wgctrl)#github.com/amnezia-vpn/amneziawg-go/#g;' "$file"
+    perl -0pi -e 's#golang\.zx2c4\.com/wireguard/(?!wgctrl|windows)#github.com/amnezia-vpn/amneziawg-go/#g;' "$file"
   done < <(git -C "$NETBIRD_DIR" ls-files '*.go' 'go.mod')
 
   pushd "$NETBIRD_DIR" >/dev/null
   go mod edit -dropreplace=golang.zx2c4.com/wireguard || true
-  go mod edit -dropreplace=golang.zx2c4.com/wireguard/windows || true
   go mod edit -dropreplace=github.com/amnezia-vpn/amneziawg-go || true
-  go mod edit -dropreplace=github.com/amnezia-vpn/amneziawg-windows || true
   go mod edit -replace=github.com/amnezia-vpn/amneziawg-go=../amneziawg-go
-  go mod edit -replace=github.com/amnezia-vpn/amneziawg-windows=../amneziawg-windows
   go mod tidy
   popd >/dev/null
 
@@ -92,7 +89,7 @@ replace_imports() {
   count="$(
     (
       git -C "$NETBIRD_DIR" grep -nE \
-        "github.com/amnezia-vpn/amneziawg-go|github.com/amnezia-vpn/amneziawg-windows|golang.zx2c4.com/wireguard" \
+        "github.com/amnezia-vpn/amneziawg-go|golang.zx2c4.com/wireguard" \
         -- '*.go' 'go.mod' || true
     ) | wc -l | tr -d ' '
   )"
