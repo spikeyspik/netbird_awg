@@ -159,7 +159,6 @@ jobs:
           file: ${{ github.workspace }}/workdir/repos/netbird/management/Dockerfile.multistage
           build-contexts: |
             amneziawg-go=${{ github.workspace }}/workdir/repos/amneziawg-go
-            amneziawg-windows=${{ github.workspace }}/workdir/repos/amneziawg-windows
           platforms: linux/amd64
           tags: |
             spikeyspik/netbird_awg_management:${{ env.NETBIRD_RELEASE_TAG }}

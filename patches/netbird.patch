@@ -24,13 +24,11 @@
 +}
 --- a/client/iface/configurer/usp.go
 +++ b/client/iface/configurer/usp.go
-@@ -40,25 +40,28 @@ type WGUSPConfigurer struct {
- 	device           *device.Device
- 	deviceName       string
+@@ -42,23 +42,26 @@ type WGUSPConfigurer struct {
  	activityRecorder *bind.ActivityRecorder
-+	amneziaConfig    AmneziaConfig
  
  	uapiListener net.Listener
++	amneziaConfig AmneziaConfig
  }
  
 -func NewUSPConfigurer(device *device.Device, deviceName string, activityRecorder *bind.ActivityRecorder) *WGUSPConfigurer {
@@ -202,7 +200,7 @@
  	if err != nil {
 --- a/client/iface/device/device_android.go
 +++ b/client/iface/device/device_android.go
-@@ -34,19 +34,21 @@ type WGTunDevice struct {
+@@ -34,10 +34,11 @@ type WGTunDevice struct {
  	filteredDevice *FilteredDevice
  	udpMux         *udpmux.UniversalUDPMuxDefault
  	configurer     WGConfigurer
@@ -213,23 +211,13 @@
 -func NewTunDevice(address wgaddr.Address, port int, key string, mtu uint16, iceBind *bind.ICEBind, tunAdapter TunAdapter, disableDNS bool) *WGTunDevice {
 +func NewTunDevice(address wgaddr.Address, port int, key string, mtu uint16, iceBind *bind.ICEBind, tunAdapter TunAdapter, disableDNS bool, amneziaConfig configurer.AmneziaConfig) *WGTunDevice {
  	return &WGTunDevice{
--		address:      address,
--		port:         port,
--		key:          key,
--		mtu:          mtu,
--		iceBind:      iceBind,
--		tunAdapter:   tunAdapter,
--		disableDNS:   disableDNS,
--		renewableTun: NewRenewableTUN(),
-+		address:       address,
-+		port:          port,
-+		key:           key,
-+		mtu:           mtu,
-+		iceBind:       iceBind,
-+		tunAdapter:    tunAdapter,
-+		disableDNS:    disableDNS,
+ 		address:      address,
+ 		port:         port,
+@@ -47,6 +48,7 @@ func NewTunDevice(address wgaddr.Address, port int, key string, mtu uint16, iceB
+ 		tunAdapter:   tunAdapter,
+ 		disableDNS:   disableDNS,
+ 		renewableTun: NewRenewableTUN(),
 +		amneziaConfig: amneziaConfig,
-+		renewableTun:  NewRenewableTUN(),
  	}
  }
  
@@ -244,7 +232,7 @@
  		t.device.Close()
 --- a/client/iface/device/device_darwin.go
 +++ b/client/iface/device/device_darwin.go
-@@ -29,16 +29,18 @@ type TunDevice struct {
+@@ -29,9 +29,10 @@ type TunDevice struct {
  	filteredDevice *FilteredDevice
  	udpMux         *udpmux.UniversalUDPMuxDefault
  	configurer     WGConfigurer
@@ -254,18 +242,12 @@
 -func NewTunDevice(name string, address wgaddr.Address, port int, key string, mtu uint16, iceBind *bind.ICEBind) *TunDevice {
 +func NewTunDevice(name string, address wgaddr.Address, port int, key string, mtu uint16, iceBind *bind.ICEBind, amneziaConfig configurer.AmneziaConfig) *TunDevice {
  	return &TunDevice{
--		name:    name,
--		address: address,
--		port:    port,
--		key:     key,
--		mtu:     mtu,
--		iceBind: iceBind,
-+		name:          name,
-+		address:       address,
-+		port:          port,
-+		key:           key,
-+		mtu:           mtu,
-+		iceBind:       iceBind,
+ 		name:    name,
+ 		address: address,
+@@ -39,6 +40,7 @@ func NewTunDevice(name string, address wgaddr.Address, port int, key string, mtu
+ 		key:     key,
+ 		mtu:     mtu,
+ 		iceBind: iceBind,
 +		amneziaConfig: amneziaConfig,
  	}
  }
@@ -281,7 +263,7 @@
  		t.device.Close()
 --- a/client/iface/device/device_ios.go
 +++ b/client/iface/device/device_ios.go
-@@ -29,17 +29,19 @@ type TunDevice struct {
+@@ -29,9 +29,10 @@ type TunDevice struct {
  	filteredDevice *FilteredDevice
  	udpMux         *udpmux.UniversalUDPMuxDefault
  	configurer     WGConfigurer
@@ -291,20 +273,12 @@
 -func NewTunDevice(name string, address wgaddr.Address, port int, key string, mtu uint16, iceBind *bind.ICEBind, tunFd int) *TunDevice {
 +func NewTunDevice(name string, address wgaddr.Address, port int, key string, mtu uint16, iceBind *bind.ICEBind, tunFd int, amneziaConfig configurer.AmneziaConfig) *TunDevice {
  	return &TunDevice{
--		name:    name,
--		address: address,
--		port:    port,
--		key:     key,
--		mtu:     mtu,
--		iceBind: iceBind,
--		tunFd:   tunFd,
-+		name:          name,
-+		address:       address,
-+		port:          port,
-+		key:           key,
-+		mtu:           mtu,
-+		iceBind:       iceBind,
-+		tunFd:         tunFd,
+ 		name:    name,
+ 		address: address,
+@@ -40,6 +41,7 @@ func NewTunDevice(name string, address wgaddr.Address, port int, key string, mtu
+ 		mtu:     mtu,
+ 		iceBind: iceBind,
+ 		tunFd:   tunFd,
 +		amneziaConfig: amneziaConfig,
  	}
  }
@@ -320,7 +294,7 @@
  		t.device.Close()
 --- a/client/iface/device/device_netstack.go
 +++ b/client/iface/device/device_netstack.go
-@@ -38,11 +38,12 @@ type TunNetstackDevice struct {
+@@ -39,11 +39,12 @@ type TunNetstackDevice struct {
  	nsTun          *nbnetstack.NetStackTun
  	udpMux         *udpmux.UniversalUDPMuxDefault
  	configurer     WGConfigurer
@@ -334,7 +308,7 @@
  	return &TunNetstackDevice{
  		name:          name,
  		address:       address,
-@@ -51,6 +52,7 @@ func NewNetstackDevice(name string, address wgaddr.Address, wgPort int, key stri
+@@ -52,6 +53,7 @@ func NewNetstackDevice(name string, address wgaddr.Address, wgPort int, key stri
  		mtu:           mtu,
  		listenAddress: listenAddress,
  		bind:          bind,
@@ -342,7 +316,7 @@
  	}
  }
  
-@@ -79,7 +81,7 @@ func (t *TunNetstackDevice) create() (WGConfigurer, error) {
+@@ -84,7 +86,7 @@ func (t *TunNetstackDevice) create() (WGConfigurer, error) {
  		device.NewLogger(wgLogLevel(), "[netbird] "),
  	)
  
@@ -372,35 +346,27 @@
  	if err != nil {
 --- a/client/iface/device/device_usp_unix.go
 +++ b/client/iface/device/device_usp_unix.go
-@@ -28,18 +28,20 @@ type USPDevice struct {
+@@ -28,9 +28,10 @@ type TunDevice struct {
  	filteredDevice *FilteredDevice
  	udpMux         *udpmux.UniversalUDPMuxDefault
  	configurer     WGConfigurer
 +	amneziaConfig  configurer.AmneziaConfig
  }
  
--func NewUSPDevice(name string, address wgaddr.Address, port int, key string, mtu uint16, iceBind *bind.ICEBind) *USPDevice {
-+func NewUSPDevice(name string, address wgaddr.Address, port int, key string, mtu uint16, iceBind *bind.ICEBind, amneziaConfig configurer.AmneziaConfig) *USPDevice {
+-func NewTunDevice(name string, address wgaddr.Address, port int, key string, mtu uint16, iceBind *bind.ICEBind) *TunDevice {
++func NewTunDevice(name string, address wgaddr.Address, port int, key string, mtu uint16, iceBind *bind.ICEBind, amneziaConfig configurer.AmneziaConfig) *TunDevice {
  	log.Infof("using userspace bind mode")
  
- 	return &USPDevice{
--		name:    name,
--		address: address,
--		port:    port,
--		key:     key,
--		mtu:     mtu,
--		iceBind: iceBind,
-+		name:          name,
-+		address:       address,
-+		port:          port,
-+		key:           key,
-+		mtu:           mtu,
-+		iceBind:       iceBind,
+ 	return &TunDevice{
+@@ -40,6 +41,7 @@ func NewTunDevice(name string, address wgaddr.Address, port int, key string, mtu
+ 		key:     key,
+ 		mtu:     mtu,
+ 		iceBind: iceBind,
 +		amneziaConfig: amneziaConfig,
  	}
  }
  
-@@ -65,7 +67,7 @@ func (t *USPDevice) Create() (WGConfigurer, error) {
+@@ -65,7 +67,7 @@ func (t *TunDevice) Create() (WGConfigurer, error) {
  		return nil, fmt.Errorf("error assigning ip: %s", err)
  	}
  
@@ -411,15 +377,7 @@
  		t.device.Close()
 --- a/client/iface/device/device_windows.go
 +++ b/client/iface/device/device_windows.go
-@@ -2,6 +2,7 @@ package device
- 
- import (
- 	"fmt"
-+	"net"
- 	"net/netip"
- 
- 	log "github.com/sirupsen/logrus"
-@@ -32,16 +33,18 @@ type TunDevice struct {
+@@ -32,9 +32,10 @@ type TunDevice struct {
  	filteredDevice  *FilteredDevice
  	udpMux          *udpmux.UniversalUDPMuxDefault
  	configurer      WGConfigurer
@@ -429,23 +387,17 @@
 -func NewTunDevice(name string, address wgaddr.Address, port int, key string, mtu uint16, iceBind *bind.ICEBind) *TunDevice {
 +func NewTunDevice(name string, address wgaddr.Address, port int, key string, mtu uint16, iceBind *bind.ICEBind, amneziaConfig configurer.AmneziaConfig) *TunDevice {
  	return &TunDevice{
--		name:    name,
--		address: address,
--		port:    port,
--		key:     key,
--		mtu:     mtu,
--		iceBind: iceBind,
-+		name:          name,
-+		address:       address,
-+		port:          port,
-+		key:           key,
-+		mtu:           mtu,
-+		iceBind:       iceBind,
+ 		name:    name,
+ 		address: address,
+@@ -42,6 +43,7 @@ func NewTunDevice(name string, address wgaddr.Address, port int, key string, mtu
+ 		key:     key,
+ 		mtu:     mtu,
+ 		iceBind: iceBind,
 +		amneziaConfig: amneziaConfig,
  	}
  }
  
-@@ -95,7 +98,7 @@ func (t *TunDevice) Create() (WGConfigurer, error) {
+@@ -109,7 +111,7 @@ func (t *TunDevice) Create() (WGConfigurer, error) {
  		return nil, fmt.Errorf("error assigning ip: %s", err)
  	}
  
@@ -454,84 +406,17 @@
  	err = t.configurer.ConfigureInterface(t.key, t.port)
  	if err != nil {
  		t.device.Close()
-@@ -179,7 +182,13 @@ func (t *TunDevice) GetInterfaceGUIDString() (string, error) {
- func (t *TunDevice) assignAddr() error {
- 	luid := winipcfg.LUID(t.nativeTunDevice.LUID())
- 	log.Debugf("adding address %s to interface: %s", t.address.IP, t.name)
--	return luid.SetIPAddresses([]netip.Prefix{netip.MustParsePrefix(t.address.String())})
-+
-+	prefix := netip.MustParsePrefix(t.address.String())
-+	ip := net.IP(prefix.Addr().AsSlice())
-+	mask := net.CIDRMask(prefix.Bits(), prefix.Addr().BitLen())
-+	return luid.SetIPAddresses([]net.IPNet{
-+		{IP: ip, Mask: mask},
-+	})
- }
- 
- func (t *TunDevice) GetNet() *netstack.Net {
---- a/client/iface/device/kernel_module.go
-+++ b/client/iface/device/kernel_module.go
-@@ -2,7 +2,9 @@
- 
- package device
- 
-+import "github.com/netbirdio/netbird/client/internal/amneziawg"
-+
- // WireGuardModuleIsLoaded check if we can load WireGuard mod (linux only)
--func WireGuardModuleIsLoaded() bool {
-+func WireGuardModuleIsLoaded(conf amneziawg.AmneziaConfig) bool {
- 	return false
- }
---- a/client/iface/device/kernel_module_freebsd.go
-+++ b/client/iface/device/kernel_module_freebsd.go
-@@ -1,7 +1,9 @@
- package device
- 
-+import "github.com/netbirdio/netbird/client/internal/amneziawg"
-+
- // WireGuardModuleIsLoaded check if kernel support wireguard
--func WireGuardModuleIsLoaded() bool {
-+func WireGuardModuleIsLoaded(conf amneziawg.AmneziaConfig) bool {
- 	// Despite the fact FreeBSD natively support Wireguard (https://github.com/WireGuard/wireguard-freebsd)
- 	//  we are currently do not use it, since it is required to add wireguard kernel support to
- 	//   - https://github.com/netbirdio/netbird/tree/main/sharedsock
 --- a/client/iface/device/kernel_module_linux.go
 +++ b/client/iface/device/kernel_module_linux.go
-@@ -15,6 +15,7 @@ import (
- 	"strings"
- 	"syscall"
- 
-+	"github.com/netbirdio/netbird/client/internal/amneziawg"
- 	log "github.com/sirupsen/logrus"
- 	"github.com/vishvananda/netlink"
- 	"golang.org/x/sys/unix"
-@@ -84,18 +85,23 @@ func ModuleTunIsLoaded() bool {
- }
+@@ -85,6 +85,8 @@ func ModuleTunIsLoaded() bool {
  
  // WireGuardModuleIsLoaded check if we can load WireGuard mod (linux only)
--func WireGuardModuleIsLoaded() bool {
-+func WireGuardModuleIsLoaded(conf amneziawg.AmneziaConfig) bool {
+ func WireGuardModuleIsLoaded() bool {
++	// awg: the kernel path is not supported
++	return false
  
  	if os.Getenv(envDisableWireGuardKernel) == "true" {
  		log.Debugf("WireGuard kernel module disabled because the %s env is set to true", envDisableWireGuardKernel)
- 		return false
- 	}
- 
--	if canCreateFakeWireGuardInterface() {
-+	useAmnezia := !conf.IsEmpty()
-+	if !useAmnezia && canCreateFakeWireGuardInterface() {
- 		return true
- 	}
- 
--	loaded, err := tryToLoadModule("wireguard")
-+	moduleName := "wireguard"
-+	if useAmnezia {
-+		moduleName = "amneziawg"
-+	}
-+	loaded, err := tryToLoadModule(moduleName)
- 	if err != nil {
- 		log.Info(err)
- 		return false
 --- a/client/iface/iface.go
 +++ b/client/iface/iface.go
 @@ -8,6 +8,7 @@ import (
@@ -542,128 +427,90 @@
  	"github.com/pion/transport/v3"
  	log "github.com/sirupsen/logrus"
  	"golang.zx2c4.com/wireguard/tun/netstack"
-@@ -56,15 +57,16 @@ type wgProxyFactory interface {
- }
- 
- type WGIFaceOpts struct {
--	IFaceName    string
--	Address      string
--	WGPort       int
--	WGPrivKey    string
--	MTU          uint16
--	MobileArgs   *device.MobileIFaceArguments
--	TransportNet transport.Net
--	FilterFn     udpmux.FilterFn
--	DisableDNS   bool
-+	IFaceName     string
-+	Address       string
-+	WGPort        int
-+	WGPrivKey     string
-+	MTU           uint16
-+	MobileArgs    *device.MobileIFaceArguments
-+	TransportNet  transport.Net
-+	FilterFn      udpmux.FilterFn
-+	DisableDNS    bool
+@@ -65,6 +66,7 @@ type WGIFaceOpts struct {
+ 	TransportNet transport.Net
+ 	FilterFn     udpmux.FilterFn
+ 	DisableDNS   bool
 +	AmneziaConfig amneziawg.AmneziaConfig
  }
  
  // WGIface represents an interface instance
---- a/client/iface/iface_new_android.go
-+++ b/client/iface/iface_new_android.go
-@@ -20,7 +20,7 @@ func NewWGIFace(opts WGIFaceOpts) (*WGIface, error) {
- 	if netstack.IsEnabled() {
- 		wgIFace := &WGIface{
- 			userspaceBind:  true,
--			tun:            device.NewNetstackDevice(opts.IFaceName, wgAddress, opts.WGPort, opts.WGPrivKey, opts.MTU, iceBind, netstack.ListenAddr()),
-+			tun:            device.NewNetstackDevice(opts.IFaceName, wgAddress, opts.WGPort, opts.WGPrivKey, opts.MTU, iceBind, netstack.ListenAddr(), opts.AmneziaConfig),
- 			wgProxyFactory: wgproxy.NewUSPFactory(iceBind, opts.MTU),
- 		}
- 		return wgIFace, nil
-@@ -28,7 +28,7 @@ func NewWGIFace(opts WGIFaceOpts) (*WGIface, error) {
- 
- 	wgIFace := &WGIface{
- 		userspaceBind:  true,
--		tun:            device.NewTunDevice(wgAddress, opts.WGPort, opts.WGPrivKey, opts.MTU, iceBind, opts.MobileArgs.TunAdapter, opts.DisableDNS),
-+		tun:            device.NewTunDevice(wgAddress, opts.WGPort, opts.WGPrivKey, opts.MTU, iceBind, opts.MobileArgs.TunAdapter, opts.DisableDNS, opts.AmneziaConfig),
- 		wgProxyFactory: wgproxy.NewUSPFactory(iceBind, opts.MTU),
- 	}
- 	return wgIFace, nil
---- a/client/iface/iface_new_darwin.go
-+++ b/client/iface/iface_new_darwin.go
-@@ -21,9 +21,9 @@ func NewWGIFace(opts WGIFaceOpts) (*WGIface, error) {
+--- a/client/iface/iface_new.go
++++ b/client/iface/iface_new.go
+@@ -15,9 +15,9 @@ func NewWGIFace(opts WGIFaceOpts) (*WGIface, error) {
  
  	var tun WGTunDevice
  	if netstack.IsEnabled() {
--		tun = device.NewNetstackDevice(opts.IFaceName, wgAddress, opts.WGPort, opts.WGPrivKey, opts.MTU, iceBind, netstack.ListenAddr())
-+		tun = device.NewNetstackDevice(opts.IFaceName, wgAddress, opts.WGPort, opts.WGPrivKey, opts.MTU, iceBind, netstack.ListenAddr(), opts.AmneziaConfig)
+-		tun = device.NewNetstackDevice(opts.IFaceName, opts.Address, opts.WGPort, opts.WGPrivKey, opts.MTU, iceBind, netstack.ListenAddr())
++		tun = device.NewNetstackDevice(opts.IFaceName, opts.Address, opts.WGPort, opts.WGPrivKey, opts.MTU, iceBind, netstack.ListenAddr(), opts.AmneziaConfig)
  	} else {
--		tun = device.NewTunDevice(opts.IFaceName, wgAddress, opts.WGPort, opts.WGPrivKey, opts.MTU, iceBind)
-+		tun = device.NewTunDevice(opts.IFaceName, wgAddress, opts.WGPort, opts.WGPrivKey, opts.MTU, iceBind, opts.AmneziaConfig)
+-		tun = device.NewTunDevice(opts.IFaceName, opts.Address, opts.WGPort, opts.WGPrivKey, opts.MTU, iceBind)
++		tun = device.NewTunDevice(opts.IFaceName, opts.Address, opts.WGPort, opts.WGPrivKey, opts.MTU, iceBind, opts.AmneziaConfig)
  	}
  
- 	wgIFace := &WGIface{
---- a/client/iface/iface_new_ios.go
-+++ b/client/iface/iface_new_ios.go
-@@ -19,7 +19,7 @@ func NewWGIFace(opts WGIFaceOpts) (*WGIface, error) {
- 	iceBind := bind.NewICEBind(opts.TransportNet, opts.FilterFn, wgAddress, opts.MTU)
+ 	return &WGIface{
+--- a/client/iface/iface_new_android.go
++++ b/client/iface/iface_new_android.go
+@@ -14,7 +14,7 @@ func NewWGIFace(opts WGIFaceOpts) (*WGIface, error) {
+ 	if netstack.IsEnabled() {
+ 		wgIFace := &WGIface{
+ 			userspaceBind:  true,
+-			tun:            device.NewNetstackDevice(opts.IFaceName, opts.Address, opts.WGPort, opts.WGPrivKey, opts.MTU, iceBind, netstack.ListenAddr()),
++			tun:            device.NewNetstackDevice(opts.IFaceName, opts.Address, opts.WGPort, opts.WGPrivKey, opts.MTU, iceBind, netstack.ListenAddr(), opts.AmneziaConfig),
+ 			wgProxyFactory: wgproxy.NewUSPFactory(iceBind, opts.MTU),
+ 		}
+ 		return wgIFace, nil
+@@ -22,7 +22,7 @@ func NewWGIFace(opts WGIFaceOpts) (*WGIface, error) {
  
  	wgIFace := &WGIface{
--		tun:            device.NewTunDevice(opts.IFaceName, wgAddress, opts.WGPort, opts.WGPrivKey, opts.MTU, iceBind, opts.MobileArgs.TunFd),
-+		tun:            device.NewTunDevice(opts.IFaceName, wgAddress, iceBind, opts.MobileArgs.TunFd),
+ 		userspaceBind:  true,
+-		tun:            device.NewTunDevice(opts.Address, opts.WGPort, opts.WGPrivKey, opts.MTU, iceBind, opts.MobileArgs.TunAdapter, opts.DisableDNS),
++		tun:            device.NewTunDevice(opts.Address, opts.WGPort, opts.WGPrivKey, opts.MTU, iceBind, opts.MobileArgs.TunAdapter, opts.DisableDNS, opts.AmneziaConfig),
+ 		wgProxyFactory: wgproxy.NewUSPFactory(iceBind, opts.MTU),
+ 	}
+ 	return wgIFace, nil
+--- a/client/iface/iface_new_ios.go
++++ b/client/iface/iface_new_ios.go
+@@ -13,7 +13,7 @@ func NewWGIFace(opts WGIFaceOpts) (*WGIface, error) {
+ 	iceBind := bind.NewICEBind(opts.TransportNet, opts.FilterFn, opts.Address, opts.MTU)
+ 
+ 	wgIFace := &WGIface{
+-		tun:            device.NewTunDevice(opts.IFaceName, opts.Address, opts.WGPort, opts.WGPrivKey, opts.MTU, iceBind, opts.MobileArgs.TunFd),
++		tun:            device.NewTunDevice(opts.IFaceName, opts.Address, opts.WGPort, opts.WGPrivKey, opts.MTU, iceBind, opts.MobileArgs.TunFd, opts.AmneziaConfig),
  		userspaceBind:  true,
  		wgProxyFactory: wgproxy.NewUSPFactory(iceBind, opts.MTU),
  	}
 --- a/client/iface/iface_new_js.go
 +++ b/client/iface/iface_new_js.go
-@@ -18,7 +18,7 @@ func NewWGIFace(opts WGIFaceOpts) (*WGIface, error) {
+@@ -12,7 +12,7 @@ func NewWGIFace(opts WGIFaceOpts) (*WGIface, error) {
  	relayBind := bind.NewRelayBindJS()
  
  	wgIface := &WGIface{
--		tun:            device.NewNetstackDevice(opts.IFaceName, wgAddress, opts.WGPort, opts.WGPrivKey, opts.MTU, relayBind, netstack.ListenAddr()),
-+		tun:            device.NewNetstackDevice(opts.IFaceName, wgAddress, opts.WGPort, opts.WGPrivKey, opts.MTU, relayBind, netstack.ListenAddr(), opts.AmneziaConfig),
+-		tun:            device.NewNetstackDevice(opts.IFaceName, opts.Address, opts.WGPort, opts.WGPrivKey, opts.MTU, relayBind, netstack.ListenAddr()),
++		tun:            device.NewNetstackDevice(opts.IFaceName, opts.Address, opts.WGPort, opts.WGPrivKey, opts.MTU, relayBind, netstack.ListenAddr(), opts.AmneziaConfig),
  		userspaceBind:  true,
  		wgProxyFactory: wgproxy.NewUSPFactory(relayBind, opts.MTU),
  	}
 --- a/client/iface/iface_new_linux.go
 +++ b/client/iface/iface_new_linux.go
-@@ -23,20 +23,20 @@ func NewWGIFace(opts WGIFaceOpts) (*WGIface, error) {
- 
+@@ -16,7 +16,7 @@ func NewWGIFace(opts WGIFaceOpts) (*WGIface, error) {
  	if netstack.IsEnabled() {
- 		iceBind := bind.NewICEBind(opts.TransportNet, opts.FilterFn, wgAddress, opts.MTU)
--		wgIFace.tun = device.NewNetstackDevice(opts.IFaceName, wgAddress, opts.WGPort, opts.WGPrivKey, opts.MTU, iceBind, netstack.ListenAddr())
-+		wgIFace.tun = device.NewNetstackDevice(opts.IFaceName, wgAddress, opts.WGPort, opts.WGPrivKey, opts.MTU, iceBind, netstack.ListenAddr(), opts.AmneziaConfig)
- 		wgIFace.userspaceBind = true
- 		wgIFace.wgProxyFactory = wgproxy.NewUSPFactory(iceBind, opts.MTU)
- 		return wgIFace, nil
- 	}
- 
--	if device.WireGuardModuleIsLoaded() {
-+	if device.WireGuardModuleIsLoaded(opts.AmneziaConfig) {
- 		wgIFace.tun = device.NewKernelDevice(opts.IFaceName, wgAddress, opts.WGPort, opts.WGPrivKey, opts.MTU, opts.TransportNet)
- 		wgIFace.wgProxyFactory = wgproxy.NewKernelFactory(opts.WGPort, opts.MTU)
- 		return wgIFace, nil
- 	}
+ 		iceBind := bind.NewICEBind(opts.TransportNet, opts.FilterFn, opts.Address, opts.MTU)
+ 		return &WGIface{
+-			tun:            device.NewNetstackDevice(opts.IFaceName, opts.Address, opts.WGPort, opts.WGPrivKey, opts.MTU, iceBind, netstack.ListenAddr()),
++			tun:            device.NewNetstackDevice(opts.IFaceName, opts.Address, opts.WGPort, opts.WGPrivKey, opts.MTU, iceBind, netstack.ListenAddr(), opts.AmneziaConfig),
+ 			userspaceBind:  true,
+ 			wgProxyFactory: wgproxy.NewUSPFactory(iceBind, opts.MTU),
+ 		}, nil
+@@ -32,7 +32,7 @@ func NewWGIFace(opts WGIFaceOpts) (*WGIface, error) {
  	if device.ModuleTunIsLoaded() {
- 		iceBind := bind.NewICEBind(opts.TransportNet, opts.FilterFn, wgAddress, opts.MTU)
--		wgIFace.tun = device.NewUSPDevice(opts.IFaceName, wgAddress, opts.WGPort, opts.WGPrivKey, opts.MTU, iceBind)
-+		wgIFace.tun = device.NewUSPDevice(opts.IFaceName, wgAddress, opts.WGPort, opts.WGPrivKey, opts.MTU, iceBind, opts.AmneziaConfig)
- 		wgIFace.userspaceBind = true
- 		wgIFace.wgProxyFactory = wgproxy.NewUSPFactory(iceBind, opts.MTU)
- 		return wgIFace, nil
---- a/client/iface/iface_new_windows.go
-+++ b/client/iface/iface_new_windows.go
-@@ -18,9 +18,9 @@ func NewWGIFace(opts WGIFaceOpts) (*WGIface, error) {
- 
- 	var tun WGTunDevice
- 	if netstack.IsEnabled() {
--		tun = device.NewNetstackDevice(opts.IFaceName, wgAddress, opts.WGPort, opts.WGPrivKey, opts.MTU, iceBind, netstack.ListenAddr())
-+		tun = device.NewNetstackDevice(opts.IFaceName, wgAddress, opts.WGPort, opts.WGPrivKey, opts.MTU, iceBind, netstack.ListenAddr(), opts.AmneziaConfig)
- 	} else {
--		tun = device.NewTunDevice(opts.IFaceName, wgAddress, opts.WGPort, opts.WGPrivKey, opts.MTU, iceBind)
-+		tun = device.NewTunDevice(opts.IFaceName, wgAddress, opts.WGPort, opts.WGPrivKey, opts.MTU, iceBind, opts.AmneziaConfig)
- 	}
- 
- 	wgIFace := &WGIface{
+ 		iceBind := bind.NewICEBind(opts.TransportNet, opts.FilterFn, opts.Address, opts.MTU)
+ 		return &WGIface{
+-			tun:            device.NewTunDevice(opts.IFaceName, opts.Address, opts.WGPort, opts.WGPrivKey, opts.MTU, iceBind),
++			tun:            device.NewTunDevice(opts.IFaceName, opts.Address, opts.WGPort, opts.WGPrivKey, opts.MTU, iceBind, opts.AmneziaConfig),
+ 			userspaceBind:  true,
+ 			wgProxyFactory: wgproxy.NewUSPFactory(iceBind, opts.MTU),
+ 		}, nil
 --- /dev/null
 +++ b/client/internal/amneziawg/amneziawg.go
 @@ -0,0 +1,77 @@
@@ -752,18 +599,9 @@
  	"github.com/cenkalti/backoff/v4"
 +	"github.com/netbirdio/netbird/client/internal/amneziawg"
  	log "github.com/sirupsen/logrus"
+ 
  	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
- 	"google.golang.org/grpc/codes"
-@@ -296,7 +297,7 @@ func (c *ConnectClient) run(mobileDependency MobileDependency, runningChan chan
- 		localPeerState := peer.LocalPeerState{
- 			IP:              loginResp.GetPeerConfig().GetAddress(),
- 			PubKey:          myPrivateKey.PublicKey().String(),
--			KernelInterface: device.WireGuardModuleIsLoaded() && !netstack.IsEnabled(),
-+			KernelInterface: device.WireGuardModuleIsLoaded(amneziawg.FromProtobuf(loginResp.GetPeerConfig().GetAmneziaConfig())) && !netstack.IsEnabled(),
- 			FQDN:            loginResp.GetPeerConfig().GetFqdn(),
- 		}
- 		c.statusRecorder.UpdateLocalPeerState(localPeerState)
-@@ -568,6 +569,14 @@ func createEngineConfig(key wgtypes.Key, config *profilemanager.Config, peerConf
+@@ -587,6 +588,14 @@ func createEngineConfig(key wgtypes.Key, config *profilemanager.Config, peerConf
  		ProfileConfig: config,
  	}
  
@@ -788,17 +626,16 @@
  	"github.com/pion/ice/v4"
  	"github.com/pion/stun/v3"
  	log "github.com/sirupsen/logrus"
-@@ -134,7 +135,8 @@ type EngineConfig struct {
+@@ -148,6 +149,8 @@ type EngineConfig struct {
  
- 	LazyConnectionEnabled bool
- 
--	MTU uint16
-+	MTU           uint16
+ 	LogPath string
+ 	TempDir string
++
 +	AmneziaConfig amneziawg.AmneziaConfig
+ }
  
- 	// for debug bundle generation
- 	ProfileConfig *profilemanager.Config
-@@ -1031,6 +1033,17 @@ func (e *Engine) updateConfig(conf *mgmProto.PeerConfig) error {
+ // EngineServices holds the external service dependencies required by the Engine.
+@@ -1060,6 +1063,17 @@ func (e *Engine) updateConfig(conf *mgmProto.PeerConfig) error {
  		return ErrResetConnection
  	}
  
@@ -816,26 +653,10 @@
  	if conf.GetSshConfig() != nil {
  		if err := e.updateSSH(conf.GetSshConfig()); err != nil {
  			log.Warnf("failed handling SSH server setup: %v", err)
-@@ -1765,14 +1778,15 @@ func (e *Engine) newWgIface() (*iface.WGIface, error) {
- 	}
- 
- 	opts := iface.WGIFaceOpts{
--		IFaceName:    e.config.WgIfaceName,
--		Address:      e.config.WgAddr,
--		WGPort:       e.config.WgPort,
--		WGPrivKey:    e.config.WgPrivateKey.String(),
--		MTU:          e.config.MTU,
--		TransportNet: transportNet,
--		FilterFn:     e.addrViaRoutes,
--		DisableDNS:   e.config.DisableDNS,
-+		IFaceName:     e.config.WgIfaceName,
-+		Address:       e.config.WgAddr,
-+		WGPort:        e.config.WgPort,
-+		WGPrivKey:     e.config.WgPrivateKey.String(),
-+		MTU:           e.config.MTU,
-+		TransportNet:  transportNet,
-+		FilterFn:      e.addrViaRoutes,
-+		DisableDNS:    e.config.DisableDNS,
+@@ -1878,6 +1892,7 @@ func (e *Engine) newWgIface() (*iface.WGIface, error) {
+ 		TransportNet: transportNet,
+ 		FilterFn:     e.addrViaRoutes,
+ 		DisableDNS:   e.config.DisableDNS,
 +		AmneziaConfig: e.config.AmneziaConfig,
  	}
  
@@ -928,7 +749,7 @@
  COPY . .
 --- a/management/internals/shared/grpc/conversion.go
 +++ b/management/internals/shared/grpc/conversion.go
-@@ -14,6 +14,7 @@ import (
+@@ -17,6 +17,7 @@ import (
  	nbdns "github.com/netbirdio/netbird/dns"
  	"github.com/netbirdio/netbird/management/internals/controllers/network_map/controller/cache"
  	nbconfig "github.com/netbirdio/netbird/management/internals/server/config"
@@ -936,7 +757,7 @@
  	nbpeer "github.com/netbirdio/netbird/management/server/peer"
  	"github.com/netbirdio/netbird/management/server/posture"
  	"github.com/netbirdio/netbird/management/server/types"
-@@ -110,6 +111,22 @@ func toPeerConfig(peer *nbpeer.Peer, network *types.Network, dnsName string, set
+@@ -114,6 +115,22 @@ func toPeerConfig(peer *nbpeer.Peer, network *types.Network, dnsName string, set
  			Version:      settings.AutoUpdateVersion,
  			AlwaysUpdate: settings.AutoUpdateAlways,
  		},
@@ -957,8 +778,8 @@
 +			I5:   &amneziawg.Store.I5,
 +		},
  	}
- }
  
+ 	if peer.SupportsIPv6() && peer.IPv6.IsValid() && network.NetV6.IP != nil {
 --- /dev/null
 +++ b/management/server/amneziawg/amneziawg_env.go
 @@ -0,0 +1,211 @@
@@ -1175,7 +996,7 @@
 +}
 --- a/shared/management/proto/management.proto
 +++ b/shared/management/proto/management.proto
-@@ -314,8 +314,6 @@ message ProtectedHostConfig {
+@@ -328,8 +328,6 @@ message ProtectedHostConfig {
    string password = 3;
  }
  
@@ -1184,17 +1005,17 @@
  message PeerConfig {
    // Peer's virtual IP address within the Netbird VPN (a Wireguard address config)
    string  address = 1;
-@@ -335,6 +333,9 @@ message PeerConfig {
+@@ -352,6 +350,9 @@ message PeerConfig {
  
-   // Auto-update config
-   AutoUpdateSettings autoUpdate = 8;
+   // IPv6 overlay address as compact bytes: 16 bytes IP + 1 byte prefix length.
+   bytes address_v6 = 9;
 +
 +  // AmneziaWG obfuscation configuration. If not set, standard WireGuard is used.
-+  optional AmneziaConfig amneziaConfig = 9;
++  optional AmneziaConfig amneziaConfig = 2047;
  }
  
  message AutoUpdateSettings {
-@@ -684,3 +685,36 @@ message StopExposeRequest {
+@@ -709,3 +710,36 @@ message StopExposeRequest {
  }
  
  message StopExposeResponse {}
