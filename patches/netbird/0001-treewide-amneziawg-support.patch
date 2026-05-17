@@ -1,3 +1,12 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: K900 <me@0upti.me>
+Date: Sun, 17 May 2026 15:07:22 +0300
+Subject: [PATCH] treewide: amneziawg support
+
+
+diff --git a/client/iface/configurer/amnezia_config.go b/client/iface/configurer/amnezia_config.go
+new file mode 100644
+index 000000000..8ad4f7224
 --- /dev/null
 +++ b/client/iface/configurer/amnezia_config.go
 @@ -0,0 +1,21 @@
@@ -22,6 +31,8 @@
 +	GetI4() string
 +	GetI5() string
 +}
+diff --git a/client/iface/configurer/usp.go b/client/iface/configurer/usp.go
+index 9b070aab8..dcbea6fcb 100644
 --- a/client/iface/configurer/usp.go
 +++ b/client/iface/configurer/usp.go
 @@ -42,23 +42,26 @@ type WGUSPConfigurer struct {
@@ -198,6 +209,8 @@
  func toLastHandshake(stringVar string) (time.Time, error) {
  	sec, err := strconv.ParseInt(stringVar, 10, 64)
  	if err != nil {
+diff --git a/client/iface/device/device_android.go b/client/iface/device/device_android.go
+index cbe88c10c..a15e9d278 100644
 --- a/client/iface/device/device_android.go
 +++ b/client/iface/device/device_android.go
 @@ -34,10 +34,11 @@ type WGTunDevice struct {
@@ -230,6 +243,8 @@
  	err = t.configurer.ConfigureInterface(t.key, t.port)
  	if err != nil {
  		t.device.Close()
+diff --git a/client/iface/device/device_darwin.go b/client/iface/device/device_darwin.go
+index ac8f8a51b..00ee5df7d 100644
 --- a/client/iface/device/device_darwin.go
 +++ b/client/iface/device/device_darwin.go
 @@ -29,9 +29,10 @@ type TunDevice struct {
@@ -261,6 +276,8 @@
  	err = t.configurer.ConfigureInterface(t.key, t.port)
  	if err != nil {
  		t.device.Close()
+diff --git a/client/iface/device/device_ios.go b/client/iface/device/device_ios.go
+index 8368c8dce..7f0746c36 100644
 --- a/client/iface/device/device_ios.go
 +++ b/client/iface/device/device_ios.go
 @@ -29,9 +29,10 @@ type TunDevice struct {
@@ -292,6 +309,8 @@
  	err = t.configurer.ConfigureInterface(t.key, t.port)
  	if err != nil {
  		t.device.Close()
+diff --git a/client/iface/device/device_netstack.go b/client/iface/device/device_netstack.go
+index b3bce3925..7a4f2a9eb 100644
 --- a/client/iface/device/device_netstack.go
 +++ b/client/iface/device/device_netstack.go
 @@ -39,11 +39,12 @@ type TunNetstackDevice struct {
@@ -325,6 +344,8 @@
  	err = t.configurer.ConfigureInterface(t.key, t.port)
  	if err != nil {
  		if cErr := tunIface.Close(); cErr != nil {
+diff --git a/client/iface/device/device_netstack_test.go b/client/iface/device/device_netstack_test.go
+index 52059602f..b4c84e675 100644
 --- a/client/iface/device/device_netstack_test.go
 +++ b/client/iface/device/device_netstack_test.go
 @@ -3,6 +3,7 @@ package device
@@ -344,6 +365,8 @@
  
  	cfgr, err := nsTun.Create()
  	if err != nil {
+diff --git a/client/iface/device/device_usp_unix.go b/client/iface/device/device_usp_unix.go
+index 04c265c49..8d87e5043 100644
 --- a/client/iface/device/device_usp_unix.go
 +++ b/client/iface/device/device_usp_unix.go
 @@ -28,9 +28,10 @@ type TunDevice struct {
@@ -375,6 +398,8 @@
  	err = t.configurer.ConfigureInterface(t.key, t.port)
  	if err != nil {
  		t.device.Close()
+diff --git a/client/iface/device/device_windows.go b/client/iface/device/device_windows.go
+index f52392fa2..f1ab1a8d2 100644
 --- a/client/iface/device/device_windows.go
 +++ b/client/iface/device/device_windows.go
 @@ -32,9 +32,10 @@ type TunDevice struct {
@@ -406,6 +431,8 @@
  	err = t.configurer.ConfigureInterface(t.key, t.port)
  	if err != nil {
  		t.device.Close()
+diff --git a/client/iface/device/kernel_module_linux.go b/client/iface/device/kernel_module_linux.go
+index b28ddd36c..8a61e1ef1 100644
 --- a/client/iface/device/kernel_module_linux.go
 +++ b/client/iface/device/kernel_module_linux.go
 @@ -85,6 +85,8 @@ func ModuleTunIsLoaded() bool {
@@ -417,6 +444,8 @@
  
  	if os.Getenv(envDisableWireGuardKernel) == "true" {
  		log.Debugf("WireGuard kernel module disabled because the %s env is set to true", envDisableWireGuardKernel)
+diff --git a/client/iface/iface.go b/client/iface/iface.go
+index 247f421a2..f9d891315 100644
 --- a/client/iface/iface.go
 +++ b/client/iface/iface.go
 @@ -8,6 +8,7 @@ import (
@@ -427,14 +456,16 @@
  	"github.com/pion/transport/v3"
  	log "github.com/sirupsen/logrus"
  	"golang.zx2c4.com/wireguard/tun/netstack"
-@@ -65,6 +66,7 @@ type WGIFaceOpts struct {
+@@ -64,6 +65,7 @@ type WGIFaceOpts struct {
+ 	MobileArgs   *device.MobileIFaceArguments
  	TransportNet transport.Net
- 	FilterFn     udpmux.FilterFn
  	DisableDNS   bool
 +	AmneziaConfig amneziawg.AmneziaConfig
  }
  
  // WGIface represents an interface instance
+diff --git a/client/iface/iface_new.go b/client/iface/iface_new.go
+index 96a0e670f..ae9f5c379 100644
 --- a/client/iface/iface_new.go
 +++ b/client/iface/iface_new.go
 @@ -15,9 +15,9 @@ func NewWGIFace(opts WGIFaceOpts) (*WGIface, error) {
@@ -449,6 +480,8 @@
  	}
  
  	return &WGIface{
+diff --git a/client/iface/iface_new_android.go b/client/iface/iface_new_android.go
+index ce8b4da23..eda967d96 100644
 --- a/client/iface/iface_new_android.go
 +++ b/client/iface/iface_new_android.go
 @@ -14,7 +14,7 @@ func NewWGIFace(opts WGIFaceOpts) (*WGIface, error) {
@@ -469,10 +502,12 @@
  		wgProxyFactory: wgproxy.NewUSPFactory(iceBind, opts.MTU),
  	}
  	return wgIFace, nil
+diff --git a/client/iface/iface_new_ios.go b/client/iface/iface_new_ios.go
+index cedd55ce2..48278c693 100644
 --- a/client/iface/iface_new_ios.go
 +++ b/client/iface/iface_new_ios.go
 @@ -13,7 +13,7 @@ func NewWGIFace(opts WGIFaceOpts) (*WGIface, error) {
- 	iceBind := bind.NewICEBind(opts.TransportNet, opts.FilterFn, opts.Address, opts.MTU)
+ 	iceBind := bind.NewICEBind(opts.TransportNet, opts.Address, opts.MTU)
  
  	wgIFace := &WGIface{
 -		tun:            device.NewTunDevice(opts.IFaceName, opts.Address, opts.WGPort, opts.WGPrivKey, opts.MTU, iceBind, opts.MobileArgs.TunFd),
@@ -480,6 +515,8 @@
  		userspaceBind:  true,
  		wgProxyFactory: wgproxy.NewUSPFactory(iceBind, opts.MTU),
  	}
+diff --git a/client/iface/iface_new_js.go b/client/iface/iface_new_js.go
+index 9f7a3ba62..17fe11aca 100644
 --- a/client/iface/iface_new_js.go
 +++ b/client/iface/iface_new_js.go
 @@ -12,7 +12,7 @@ func NewWGIFace(opts WGIFaceOpts) (*WGIface, error) {
@@ -491,11 +528,13 @@
  		userspaceBind:  true,
  		wgProxyFactory: wgproxy.NewUSPFactory(relayBind, opts.MTU),
  	}
+diff --git a/client/iface/iface_new_linux.go b/client/iface/iface_new_linux.go
+index 2465130e6..68083309d 100644
 --- a/client/iface/iface_new_linux.go
 +++ b/client/iface/iface_new_linux.go
 @@ -16,7 +16,7 @@ func NewWGIFace(opts WGIFaceOpts) (*WGIface, error) {
  	if netstack.IsEnabled() {
- 		iceBind := bind.NewICEBind(opts.TransportNet, opts.FilterFn, opts.Address, opts.MTU)
+ 		iceBind := bind.NewICEBind(opts.TransportNet, opts.Address, opts.MTU)
  		return &WGIface{
 -			tun:            device.NewNetstackDevice(opts.IFaceName, opts.Address, opts.WGPort, opts.WGPrivKey, opts.MTU, iceBind, netstack.ListenAddr()),
 +			tun:            device.NewNetstackDevice(opts.IFaceName, opts.Address, opts.WGPort, opts.WGPrivKey, opts.MTU, iceBind, netstack.ListenAddr(), opts.AmneziaConfig),
@@ -504,13 +543,16 @@
  		}, nil
 @@ -32,7 +32,7 @@ func NewWGIFace(opts WGIFaceOpts) (*WGIface, error) {
  	if device.ModuleTunIsLoaded() {
- 		iceBind := bind.NewICEBind(opts.TransportNet, opts.FilterFn, opts.Address, opts.MTU)
+ 		iceBind := bind.NewICEBind(opts.TransportNet, opts.Address, opts.MTU)
  		return &WGIface{
 -			tun:            device.NewTunDevice(opts.IFaceName, opts.Address, opts.WGPort, opts.WGPrivKey, opts.MTU, iceBind),
 +			tun:            device.NewTunDevice(opts.IFaceName, opts.Address, opts.WGPort, opts.WGPrivKey, opts.MTU, iceBind, opts.AmneziaConfig),
  			userspaceBind:  true,
  			wgProxyFactory: wgproxy.NewUSPFactory(iceBind, opts.MTU),
  		}, nil
+diff --git a/client/internal/amneziawg/amneziawg.go b/client/internal/amneziawg/amneziawg.go
+new file mode 100644
+index 000000000..e1d171b6a
 --- /dev/null
 +++ b/client/internal/amneziawg/amneziawg.go
 @@ -0,0 +1,77 @@
@@ -591,9 +633,11 @@
 +		I5:   config.GetI5(),
 +	}
 +}
+diff --git a/client/internal/connect.go b/client/internal/connect.go
+index d93b62bb5..332c0692a 100644
 --- a/client/internal/connect.go
 +++ b/client/internal/connect.go
-@@ -13,6 +13,7 @@ import (
+@@ -14,6 +14,7 @@ import (
  	"time"
  
  	"github.com/cenkalti/backoff/v4"
@@ -601,7 +645,7 @@
  	log "github.com/sirupsen/logrus"
  
  	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
-@@ -587,6 +588,14 @@ func createEngineConfig(key wgtypes.Key, config *profilemanager.Config, peerConf
+@@ -594,6 +595,14 @@ func createEngineConfig(key wgtypes.Key, config *profilemanager.Config, peerConf
  		ProfileConfig: config,
  	}
  
@@ -616,6 +660,8 @@
  	if config.PreSharedKey != "" {
  		preSharedKey, err := wgtypes.ParseKey(config.PreSharedKey)
  		if err != nil {
+diff --git a/client/internal/engine.go b/client/internal/engine.go
+index 42712da92..d8341d6e3 100644
 --- a/client/internal/engine.go
 +++ b/client/internal/engine.go
 @@ -17,6 +17,7 @@ import (
@@ -626,16 +672,16 @@
  	"github.com/pion/ice/v4"
  	"github.com/pion/stun/v3"
  	log "github.com/sirupsen/logrus"
-@@ -148,6 +149,8 @@ type EngineConfig struct {
- 
- 	LogPath string
- 	TempDir string
+@@ -152,6 +153,8 @@ type EngineConfig struct {
+ 	// StateDir is the directory holding the state file. The sync response
+ 	// (network map) is serialized here on platforms that persist it to disk.
+ 	StateDir string
 +
 +	AmneziaConfig amneziawg.AmneziaConfig
  }
  
  // EngineServices holds the external service dependencies required by the Engine.
-@@ -1060,6 +1063,17 @@ func (e *Engine) updateConfig(conf *mgmProto.PeerConfig) error {
+@@ -1085,6 +1088,17 @@ func (e *Engine) updateConfig(conf *mgmProto.PeerConfig) error {
  		return ErrResetConnection
  	}
  
@@ -653,65 +699,16 @@
  	if conf.GetSshConfig() != nil {
  		if err := e.updateSSH(conf.GetSshConfig()); err != nil {
  			log.Warnf("failed handling SSH server setup: %v", err)
-@@ -1878,6 +1892,7 @@ func (e *Engine) newWgIface() (*iface.WGIface, error) {
+@@ -1920,6 +1934,7 @@ func (e *Engine) newWgIface() (*iface.WGIface, error) {
+ 		MTU:          e.config.MTU,
  		TransportNet: transportNet,
- 		FilterFn:     e.addrViaRoutes,
  		DisableDNS:   e.config.DisableDNS,
 +		AmneziaConfig: e.config.AmneziaConfig,
  	}
  
  	switch runtime.GOOS {
---- a/client/internal/updater/installer/installer_common.go
-+++ b/client/internal/updater/installer/installer_common.go
-@@ -17,7 +17,6 @@ import (
- 	log "github.com/sirupsen/logrus"
- 
- 	"github.com/netbirdio/netbird/client/internal/updater/downloader"
--	"github.com/netbirdio/netbird/client/internal/updater/reposign"
- )
- 
- type Installer struct {
-@@ -70,16 +69,6 @@ func (u *Installer) RunInstallation(ctx context.Context, targetVersion string) (
- 			return err
- 		}
- 
--		artifactVerify, err := reposign.NewArtifactVerify(DefaultSigningKeysBaseURL)
--		if err != nil {
--			log.Errorf("failed to create artifact verify: %v", err)
--			return err
--		}
--
--		if err := artifactVerify.Verify(ctx, targetVersion, installerFile); err != nil {
--			log.Errorf("artifact verification error: %v", err)
--			return err
--		}
- 	}
- 
- 	log.Infof("running installer")
---- a/client/internal/updater/installer/installer_run_darwin.go
-+++ b/client/internal/updater/installer/installer_run_darwin.go
-@@ -22,7 +22,7 @@ const (
- 
- 	defaultTempDir = "/var/lib/netbird/tmp-install"
- 
--	pkgDownloadURL = "https://github.com/netbirdio/netbird/releases/download/v%version/netbird_%version_darwin_%arch.pkg"
-+	pkgDownloadURL = "https://github.com/spikeyspik/netbird_awg/releases/download/v%version/netbird_%version_darwin_%arch.pkg"
- )
- 
- var (
---- a/client/internal/updater/installer/installer_run_windows.go
-+++ b/client/internal/updater/installer/installer_run_windows.go
-@@ -22,8 +22,8 @@ const (
- 
- 	msiLogFile = "msi.log"
- 
--	msiDownloadURL = "https://github.com/netbirdio/netbird/releases/download/v%version/netbird_installer_%version_windows_%arch.msi"
--	exeDownloadURL = "https://github.com/netbirdio/netbird/releases/download/v%version/netbird_installer_%version_windows_%arch.exe"
-+	msiDownloadURL = "https://github.com/spikeyspik/netbird_awg/releases/download/v%version/netbird_installer_%version_windows_%arch.msi"
-+	exeDownloadURL = "https://github.com/spikeyspik/netbird_awg/releases/download/v%version/netbird_installer_%version_windows_%arch.exe"
- )
- 
- var (
+diff --git a/infrastructure_files/docker-compose.yml.tmpl b/infrastructure_files/docker-compose.yml.tmpl
+index 1c9c63f78..2ef517cc8 100644
 --- a/infrastructure_files/docker-compose.yml.tmpl
 +++ b/infrastructure_files/docker-compose.yml.tmpl
 @@ -95,6 +95,21 @@ services:
@@ -736,20 +733,23 @@
        
    # Coturn
    coturn:
+diff --git a/management/Dockerfile.multistage b/management/Dockerfile.multistage
+index 619f84615..143cc5c54 100644
 --- a/management/Dockerfile.multistage
 +++ b/management/Dockerfile.multistage
-@@ -5,6 +5,8 @@ WORKDIR /app
+@@ -5,6 +5,7 @@ WORKDIR /app
  RUN apt-get update && apt-get install -y gcc libc6-dev && rm -rf /var/lib/apt/lists/*
  
  COPY go.mod go.sum ./
 +COPY --from=amneziawg-go . /amneziawg-go
-+COPY --from=amneziawg-windows . /amneziawg-windows
  RUN go mod download
  
  COPY . .
+diff --git a/management/internals/shared/grpc/conversion.go b/management/internals/shared/grpc/conversion.go
+index ced982a30..0927ec3d0 100644
 --- a/management/internals/shared/grpc/conversion.go
 +++ b/management/internals/shared/grpc/conversion.go
-@@ -17,6 +17,7 @@ import (
+@@ -21,6 +21,7 @@ import (
  	nbdns "github.com/netbirdio/netbird/dns"
  	"github.com/netbirdio/netbird/management/internals/controllers/network_map/controller/cache"
  	nbconfig "github.com/netbirdio/netbird/management/internals/server/config"
@@ -757,7 +757,7 @@
  	nbpeer "github.com/netbirdio/netbird/management/server/peer"
  	"github.com/netbirdio/netbird/management/server/posture"
  	"github.com/netbirdio/netbird/management/server/types"
-@@ -114,6 +115,22 @@ func toPeerConfig(peer *nbpeer.Peer, network *types.Network, dnsName string, set
+@@ -135,6 +136,22 @@ func toPeerConfig(peer *nbpeer.Peer, network *types.Network, dnsName string, set
  			Version:      settings.AutoUpdateVersion,
  			AlwaysUpdate: settings.AutoUpdateAlways,
  		},
@@ -780,6 +780,9 @@
  	}
  
  	if peer.SupportsIPv6() && peer.IPv6.IsValid() && network.NetV6.IP != nil {
+diff --git a/management/server/amneziawg/amneziawg_env.go b/management/server/amneziawg/amneziawg_env.go
+new file mode 100644
+index 000000000..15320d0ea
 --- /dev/null
 +++ b/management/server/amneziawg/amneziawg_env.go
 @@ -0,0 +1,211 @@
@@ -994,18 +997,11 @@
 +	}
 +	return val
 +}
+diff --git a/shared/management/proto/management.proto b/shared/management/proto/management.proto
+index 990a72a63..ffa90b6bd 100644
 --- a/shared/management/proto/management.proto
 +++ b/shared/management/proto/management.proto
-@@ -328,8 +328,6 @@ message ProtectedHostConfig {
-   string password = 3;
- }
- 
--// PeerConfig represents a configuration of a "our" peer.
--// The properties are used to configure local Wireguard
- message PeerConfig {
-   // Peer's virtual IP address within the Netbird VPN (a Wireguard address config)
-   string  address = 1;
-@@ -352,6 +350,9 @@ message PeerConfig {
+@@ -394,6 +394,9 @@ message PeerConfig {
  
    // IPv6 overlay address as compact bytes: 16 bytes IP + 1 byte prefix length.
    bytes address_v6 = 9;
@@ -1015,7 +1011,7 @@
  }
  
  message AutoUpdateSettings {
-@@ -709,3 +710,36 @@ message StopExposeRequest {
+@@ -751,3 +754,36 @@ message StopExposeRequest {
  }
  
  message StopExposeResponse {}
@@ -1052,49 +1048,3 @@
 +  // Init packet magic string 5
 +  optional string i5 = 14;
 +}
---- a/version/update.go
-+++ b/version/update.go
-@@ -15,7 +15,7 @@ const (
- )
- 
- var (
--	versionURL = "https://pkgs.netbird.io/releases/latest/version"
-+	versionURL = "https://nb-awg.cc/releases/latest/version"
- )
- 
- // Update fetch the version info periodically and notify the onUpdateListener in case the UI version or the
---- a/version/url.go
-+++ b/version/url.go
-@@ -1,5 +1,5 @@
- package version
- 
- const (
--	downloadURL = "https://app.netbird.io/install"
-+	downloadURL = "https://nb-awg.cc/install"
- )
---- a/version/url_darwin.go
-+++ b/version/url_darwin.go
-@@ -6,8 +6,8 @@ import (
- )
- 
- const (
--	urlMacIntel = "https://pkgs.netbird.io/macos/amd64"
--	urlMacM1M2  = "https://pkgs.netbird.io/macos/arm64"
-+	urlMacIntel = "https://nb-awg.cc/macos/amd64"
-+	urlMacM1M2  = "https://nb-awg.cc/macos/arm64"
- )
- 
- // DownloadUrl return with the proper download link
---- a/version/url_windows.go
-+++ b/version/url_windows.go
-@@ -6,8 +6,8 @@ import (
- )
- 
- const (
--	urlWinExe    = "https://pkgs.netbird.io/windows/x64"
--	urlWinExeArm = "https://pkgs.netbird.io/windows/arm64"
-+	urlWinExe    = "https://nb-awg.cc/windows/x64"
-+	urlWinExeArm = "https://nb-awg.cc/windows/arm64"
- )
- 
- var regKeyAppPath = "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths\\Netbird"

@@ -1,0 +1,88 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: K900 <me@0upti.me>
+Date: Sun, 17 May 2026 15:08:58 +0300
+Subject: [PATCH] client/updater: update download URLs to point to fork
+
+
+diff --git a/client/internal/updater/installer/installer_run_darwin.go b/client/internal/updater/installer/installer_run_darwin.go
+index 248a404aa..91d70c3c1 100644
+--- a/client/internal/updater/installer/installer_run_darwin.go
++++ b/client/internal/updater/installer/installer_run_darwin.go
+@@ -22,7 +22,7 @@ const (
+ 
+ 	defaultTempDir = "/var/lib/netbird/tmp-install"
+ 
+-	pkgDownloadURL = "https://github.com/netbirdio/netbird/releases/download/v%version/netbird_%version_darwin_%arch.pkg"
++	pkgDownloadURL = "https://github.com/spikeyspik/netbird_awg/releases/download/v%version/netbird_%version_darwin_%arch.pkg"
+ )
+ 
+ var (
+diff --git a/client/internal/updater/installer/installer_run_windows.go b/client/internal/updater/installer/installer_run_windows.go
+index 70c7e32cf..ec429c76a 100644
+--- a/client/internal/updater/installer/installer_run_windows.go
++++ b/client/internal/updater/installer/installer_run_windows.go
+@@ -22,8 +22,8 @@ const (
+ 
+ 	msiLogFile = "msi.log"
+ 
+-	msiDownloadURL = "https://github.com/netbirdio/netbird/releases/download/v%version/netbird_installer_%version_windows_%arch.msi"
+-	exeDownloadURL = "https://github.com/netbirdio/netbird/releases/download/v%version/netbird_installer_%version_windows_%arch.exe"
++	msiDownloadURL = "https://github.com/spikeyspik/netbird_awg/releases/download/v%version/netbird_installer_%version_windows_%arch.msi"
++	exeDownloadURL = "https://github.com/spikeyspik/netbird_awg/releases/download/v%version/netbird_installer_%version_windows_%arch.exe"
+ )
+ 
+ var (
+diff --git a/version/update.go b/version/update.go
+index a324d97fe..2b43691bb 100644
+--- a/version/update.go
++++ b/version/update.go
+@@ -15,7 +15,7 @@ const (
+ )
+ 
+ var (
+-	versionURL = "https://pkgs.netbird.io/releases/latest/version"
++	versionURL = "https://nb-awg.cc/releases/latest/version"
+ )
+ 
+ // Update fetch the version info periodically and notify the onUpdateListener in case the UI version or the
+diff --git a/version/url.go b/version/url.go
+index ed43ab042..815143067 100644
+--- a/version/url.go
++++ b/version/url.go
+@@ -1,5 +1,5 @@
+ package version
+ 
+ const (
+-	downloadURL = "https://app.netbird.io/install"
++	downloadURL = "https://nb-awg.cc/install"
+ )
+diff --git a/version/url_darwin.go b/version/url_darwin.go
+index cb58612f5..68afe8e9e 100644
+--- a/version/url_darwin.go
++++ b/version/url_darwin.go
+@@ -6,8 +6,8 @@ import (
+ )
+ 
+ const (
+-	urlMacIntel = "https://pkgs.netbird.io/macos/amd64"
+-	urlMacM1M2  = "https://pkgs.netbird.io/macos/arm64"
++	urlMacIntel = "https://nb-awg.cc/macos/amd64"
++	urlMacM1M2  = "https://nb-awg.cc/macos/arm64"
+ )
+ 
+ // DownloadUrl return with the proper download link
+diff --git a/version/url_windows.go b/version/url_windows.go
+index a0fb6e5dd..71f77e0b5 100644
+--- a/version/url_windows.go
++++ b/version/url_windows.go
+@@ -6,8 +6,8 @@ import (
+ )
+ 
+ const (
+-	urlWinExe    = "https://pkgs.netbird.io/windows/x64"
+-	urlWinExeArm = "https://pkgs.netbird.io/windows/arm64"
++	urlWinExe    = "https://nb-awg.cc/windows/x64"
++	urlWinExeArm = "https://nb-awg.cc/windows/arm64"
+ )
+ 
+ var regKeyAppPath = "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths\\Netbird"
