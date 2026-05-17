@@ -53,6 +53,25 @@ jobs:
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          java-version: "17"
+          distribution: "adopt"
+          cache: "gradle"
+
+      - name: Setup NDK
+        shell: bash
+        run: ${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager --install "ndk;23.1.7779620"
+
+      - name: Set ANDROID_NDK_HOME
+        shell: bash
+        run: echo "ANDROID_NDK_HOME=${ANDROID_HOME}/ndk/23.1.7779620" >> $GITHUB_ENV
+
+      - name: Install gomobile
+        shell: bash
+        run: go install golang.org/x/mobile/cmd/gomobile@v0.0.0-20251113184115-a159579294ab
+
       - name: Prepare sources
         run: ./scripts/prepare_sources.sh
 
@@ -92,6 +111,22 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Build Android Go library
+        shell: bash
+        run: |
+          cd workdir/repos/android
+          PATH=$PATH:$(go env GOPATH)/bin bash -x build-android-lib.sh ${NETBIRD_RELEASE_TAG}
+
+      - name: Build APK and Bundle
+        shell: bash
+        run: |
+          cd workdir/repos/android
+          export NETBIRD_UPLOAD_STORE_FILE=../../../../debug.keystore
+          export NETBIRD_UPLOAD_STORE_PASSWORD=android
+          export NETBIRD_UPLOAD_KEY_ALIAS=androiddebugkey
+          export NETBIRD_UPLOAD_KEY_PASSWORD=android
+          ./gradlew --no-daemon assembleRelease bundleRelease -PversionName="${NETBIRD_RELEASE_TAG}" -PversionCode="${{ github.run_number }}"
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -102,6 +137,8 @@ jobs:
             ${{ github.workspace }}/workdir/repos/netbird/dist-nfpm/*.deb
             ${{ github.workspace }}/workdir/repos/netbird/dist-nfpm/*.rpm
             ${{ github.workspace }}/workdir/repos/netbird/dist-nfpm/*.pkg.tar.zst
+            ${{ github.workspace }}/workdir/repos/android/app/build/outputs/apk/*/*.apk
+            ${{ github.workspace }}/workdir/repos/android/app/build/outputs/bundle/*/*.aab
           if-no-files-found: error
           retention-days: 7
 

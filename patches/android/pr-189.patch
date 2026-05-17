@@ -1,0 +1,285 @@
+diff --git a/app/src/main/java/io/netbird/client/MainActivity.java b/app/src/main/java/io/netbird/client/MainActivity.java
+index c7fb0b54..2d6a1118 100644
+--- a/app/src/main/java/io/netbird/client/MainActivity.java
++++ b/app/src/main/java/io/netbird/client/MainActivity.java
+@@ -38,6 +38,7 @@
+ import androidx.appcompat.app.AppCompatActivity;
+ 
+ import io.netbird.client.databinding.ActivityMainBinding;
++import io.netbird.client.tool.Profile;
+ import io.netbird.client.tool.RouteChangeListener;
+ import io.netbird.client.tool.ServiceStateListener;
+ import io.netbird.client.tool.VPNService;
+@@ -124,7 +125,7 @@ protected void onCreate(Bundle savedInstanceState) {
+ 
+         // Update profile menu item with active profile name
+         updateProfileMenuItem(navigationView);
+-        
++
+         // On TV, request focus when drawer opens so D-pad navigation works
+         if (isRunningOnTV) {
+             drawer.addDrawerListener(new DrawerLayout.SimpleDrawerListener() {
+@@ -640,11 +641,11 @@ private void updateProfileMenuItem(NavigationView navigationView) {
+             // Get active profile from ProfileManager instead of reading file
+             io.netbird.client.tool.ProfileManagerWrapper profileManager =
+                 new io.netbird.client.tool.ProfileManagerWrapper(this);
+-            String activeProfile = profileManager.getActiveProfile();
++            Profile activeProfile = profileManager.getActiveProfile();
+             Menu menu = navigationView.getMenu();
+             MenuItem profileItem = menu.findItem(R.id.nav_profiles);
+             if (profileItem != null && activeProfile != null) {
+-                profileItem.setTitle(activeProfile);
++                profileItem.setTitle(activeProfile.getName());
+             }
+         } catch (Exception e) {
+             Log.e(LOGTAG, "Failed to update profile menu item", e);
+diff --git a/app/src/main/java/io/netbird/client/ui/profile/ProfilesFragment.java b/app/src/main/java/io/netbird/client/ui/profile/ProfilesFragment.java
+index f06b75dd..96c27109 100644
+--- a/app/src/main/java/io/netbird/client/ui/profile/ProfilesFragment.java
++++ b/app/src/main/java/io/netbird/client/ui/profile/ProfilesFragment.java
+@@ -129,35 +129,11 @@ private void showAddDialog() {
+                         return false;
+                     }
+ 
+-                    // Validate profile name based on go client sanitization rules
+-                    String sanitizedName = sanitizeProfileName(profileName);
+-                    if (sanitizedName.isEmpty()) {
+-                        Toast.makeText(requireContext(),
+-                                "Profile name must contain at least one letter, digit, underscore or hyphen",
+-                                Toast.LENGTH_LONG).show();
+-                        return false;
+-                    }
+-
+                     addProfile(profileName);
+                     return true;
+                 }).show();
+     }
+ 
+-    /**
+-     * Sanitizes profile name using the same rules as the go client.
+-     * Only keeps letters, digits, underscores, and hyphens.
+-     * This matches the sanitization in netbird/client/internal/profilemanager/profilemanager.go
+-     */
+-    private String sanitizeProfileName(String name) {
+-        StringBuilder result = new StringBuilder();
+-        for (int i = 0; i < name.length(); i++) {
+-            char c = name.charAt(i);
+-            if (Character.isLetterOrDigit(c) || c == '_' || c == '-') {
+-                result.append(c);
+-            }
+-        }
+-        return result.toString();
+-    }
+ 
+     private void showSwitchDialog(Profile profile) {
+         createDialog(
+@@ -205,11 +181,7 @@ private void addProfile(String profileName) {
+         } catch (Exception e) {
+             Log.e(TAG, "Failed to add profile", e);
+             String errorMsg = e.getMessage();
+-            if (errorMsg != null && errorMsg.contains("already exists")) {
+-                Toast.makeText(requireContext(),
+-                        getString(R.string.profiles_error_already_exists, profileName),
+-                        Toast.LENGTH_SHORT).show();
+-            } else {
++            if (errorMsg != null) {
+                 Toast.makeText(requireContext(),
+                         "Failed to add profile: " + e.getMessage(),
+                         Toast.LENGTH_SHORT).show();
+@@ -220,7 +192,7 @@ private void addProfile(String profileName) {
+     private void switchProfile(Profile profile) {
+         try {
+             // Switch profile (VPN service will be stopped automatically in ProfileManagerWrapper)
+-            profileManager.switchProfile(profile.getName());
++            profileManager.switchProfile(profile.getID());
+ 
+             Toast.makeText(requireContext(),
+                     getString(R.string.profiles_success_switched, profile.getName()),
+@@ -241,7 +213,7 @@ private void switchProfile(Profile profile) {
+     private void logoutProfile(Profile profile) {
+         try {
+             // Logout from profile (VPN service will be stopped automatically if it's the active profile)
+-            profileManager.logoutProfile(profile.getName());
++            profileManager.logoutProfile(profile.getID());
+ 
+             Toast.makeText(requireContext(),
+                     getString(R.string.profiles_success_logged_out, profile.getName()),
+@@ -258,7 +230,7 @@ private void logoutProfile(Profile profile) {
+ 
+     private void removeProfile(Profile profile) {
+         try {
+-            if (profile.getName().equals("default")) {
++            if (profile.getID().equals("default")) {
+                 Toast.makeText(requireContext(),
+                         R.string.profiles_error_cannot_remove_default,
+                         Toast.LENGTH_SHORT).show();
+@@ -272,7 +244,7 @@ private void removeProfile(Profile profile) {
+                 return;
+             }
+ 
+-            profileManager.removeProfile(profile.getName());
++            profileManager.removeProfile(profile.getID());
+             Toast.makeText(requireContext(),
+                     getString(R.string.profiles_success_removed, profile.getName()),
+                     Toast.LENGTH_SHORT).show();
+diff --git a/netbird b/netbird
+index 07e54501..2e7b5f71 160000
+--- a/netbird
++++ b/netbird
+@@ -1 +1 @@
+-Subproject commit 07e5450117dd0451aaeefc18729a822115587e69
++Subproject commit 2e7b5f71920ce207846f175e2b64bad6a83d0888
+diff --git a/tool/src/main/java/io/netbird/client/tool/EngineRunner.java b/tool/src/main/java/io/netbird/client/tool/EngineRunner.java
+index d4069b51..d6420d6f 100644
+--- a/tool/src/main/java/io/netbird/client/tool/EngineRunner.java
++++ b/tool/src/main/java/io/netbird/client/tool/EngineRunner.java
+@@ -83,7 +83,7 @@ private synchronized void runClient(@Nullable URLOpener urlOpener, boolean isAnd
+             try {
+                 configurationFilePath = profileManager.getActiveConfigPath();
+                 stateFilePath = profileManager.getActiveStateFilePath();
+-                String activeProfile = profileManager.getActiveProfile();
++                Profile activeProfile = profileManager.getActiveProfile();
+                 Log.d(LOGTAG, "Initializing engine with profile: " + activeProfile);
+                 Log.d(LOGTAG, "Config path: " + configurationFilePath);
+                 Log.d(LOGTAG, "State path: " + stateFilePath);
+diff --git a/tool/src/main/java/io/netbird/client/tool/Profile.java b/tool/src/main/java/io/netbird/client/tool/Profile.java
+index db84ff02..a4c1dc7d 100644
+--- a/tool/src/main/java/io/netbird/client/tool/Profile.java
++++ b/tool/src/main/java/io/netbird/client/tool/Profile.java
+@@ -3,17 +3,24 @@
+ import java.util.Objects;
+ 
+ public class Profile {
++    private final String id;
+     private final String name;
+     private final boolean isActive;
+ 
+-    public Profile(String name, boolean isActive) {
++    public Profile(String id, String name, boolean isActive) {
+         if (name == null) {
+             throw new IllegalArgumentException("Profile name cannot be null");
+         }
++        if (id == null) {
++            throw new IllegalArgumentException("ID cannot be null");
++        }
++        this.id = id;
+         this.name = name;
+         this.isActive = isActive;
+     }
+ 
++    public String getID() {return id;}
++
+     public String getName() {
+         return name;
+     }
+@@ -24,7 +31,7 @@ public boolean isActive() {
+ 
+     @Override
+     public String toString() {
+-        return name + (isActive ? " (Active)" : "");
++        return id + name + (isActive ? " (Active)" : "");
+     }
+ 
+     @Override
+@@ -32,11 +39,11 @@ public boolean equals(Object o) {
+         if (this == o) return true;
+         if (o == null || getClass() != o.getClass()) return false;
+         Profile profile = (Profile) o;
+-        return Objects.equals(name, profile.name);
++        return Objects.equals(id, profile.id);
+     }
+ 
+     @Override
+     public int hashCode() {
+-        return Objects.hash(name);
++        return Objects.hash(id);
+     }
+ }
+diff --git a/tool/src/main/java/io/netbird/client/tool/ProfileManagerWrapper.java b/tool/src/main/java/io/netbird/client/tool/ProfileManagerWrapper.java
+index abbd4699..328daf60 100644
+--- a/tool/src/main/java/io/netbird/client/tool/ProfileManagerWrapper.java
++++ b/tool/src/main/java/io/netbird/client/tool/ProfileManagerWrapper.java
+@@ -36,7 +36,7 @@ public List<Profile> listProfiles() {
+                 for (int i = 0; i < array.length(); i++) {
+                     io.netbird.gomobile.android.Profile p = array.get(i);
+                     if (p != null) {
+-                        profiles.add(new Profile(p.getName(), p.getIsActive()));
++                        profiles.add(new Profile(p.getID(), p.getName(), p.getIsActive()));
+                     }
+                 }
+             }
+@@ -49,12 +49,13 @@ public List<Profile> listProfiles() {
+     /**
+      * Gets the currently active profile name
+      */
+-    public String getActiveProfile() {
++    public Profile getActiveProfile() {
+         try {
+-            return profileManager.getActiveProfile();
++            io.netbird.gomobile.android.Profile p = profileManager.getActiveProfile();
++            return new Profile(p.getID(), p.getName(), true);
+         } catch (Exception e) {
+             Log.e(TAG, "Failed to get active profile", e);
+-            return "default";
++            return new Profile("default", "default", true);
+         }
+     }
+ 
+@@ -62,15 +63,15 @@ public String getActiveProfile() {
+      * Switches to a different profile
+      * Stops the VPN service before switching
+      */
+-    public void switchProfile(String profileName) throws Exception {
+-        if (profileName == null || profileName.trim().isEmpty()) {
+-            throw new IllegalArgumentException("Profile name cannot be empty");
++    public void switchProfile(String id) throws Exception {
++        if (id == null || id.trim().isEmpty()) {
++            throw new IllegalArgumentException("ID cannot be empty");
+         }
+ 
+         // Stop VPN service before switching profile
+         stopEngine();
+ 
+-        profileManager.switchProfile(profileName);
++        profileManager.switchProfile(id);
+     }
+ 
+     /**
+@@ -87,29 +88,29 @@ public void addProfile(String profileName) throws Exception {
+      * Logs out from a profile (clears authentication, requires re-login)
+      * Stops the VPN service if logging out from the active profile
+      */
+-    public void logoutProfile(String profileName) throws Exception {
+-        if (profileName == null || profileName.trim().isEmpty()) {
++    public void logoutProfile(String id) throws Exception {
++        if (id == null) {
+             throw new IllegalArgumentException("Profile name cannot be empty");
+         }
+ 
+         // Check if logging out from active profile
+-        String activeProfile = getActiveProfile();
+-        if (activeProfile.equals(profileName)) {
++        Profile activeProfile = getActiveProfile();
++        if (activeProfile.getID().equals(id)) {
+             // Stop VPN service if logging out from active profile
+             stopEngine();
+         }
+ 
+-        profileManager.logoutProfile(profileName);
++        profileManager.logoutProfile(id);
+     }
+ 
+     /**
+      * Removes a profile
+      */
+-    public void removeProfile(String profileName) throws Exception {
+-        if (profileName == null || profileName.trim().isEmpty()) {
++    public void removeProfile(String id) throws Exception {
++        if (id == null || id.trim().isEmpty()) {
+             throw new IllegalArgumentException("Profile name cannot be empty");
+         }
+-        profileManager.removeProfile(profileName);
++        profileManager.removeProfile(id);
+     }
+ 
+     /**

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+shopt -s nullglob
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -10,6 +11,7 @@ source "$SCRIPT_DIR/version_vars.sh"
 WORKDIR="${WORKDIR:-$ROOT_DIR/workdir}"
 NETBIRD_DIR="${NETBIRD_DIR:-$WORKDIR/repos/netbird}"
 AWG_GO_DIR="${AWG_GO_DIR:-$WORKDIR/repos/amneziawg-go}"
+ANDROID_DIR="${ANDROID_DIR:-$WORKDIR/repos/android}"
 PATCH_DIR="${PATCH_DIR:-$ROOT_DIR/patches}"
 CONFIG_DIR="${CONFIG_DIR:-$ROOT_DIR/goreleaser}"
 
@@ -61,16 +63,27 @@ apply_or_skip() {
 
 apply_patches() {
   apply_or_skip "$AWG_GO_DIR" "$PATCH_DIR/amneziawg-go.patch"
-  for i in "$PATCH_DIR/netbird/"*; do
+  for i in "$PATCH_DIR/netbird/"*.patch; do
     apply_or_skip "$NETBIRD_DIR" "$i"
   done
+  for i in "$PATCH_DIR/android/"*.patch; do
+    apply_or_skip "$ANDROID_DIR" "$i"
+  done
   log ok "patches are applied"
+}
+
+patch_android() {
+  pushd "$ANDROID_DIR" >/dev/null
+  rm -rf netbird
+  ln -s "$NETBIRD_DIR" netbird
+  popd >/dev/null
+  log ok "patched android submodule"
 }
 
 regenerate_protos() {
   log debug "regenerating protobuf glue"
   pushd "$NETBIRD_DIR/shared/management/proto" >/dev/null
-  ./generate.sh
+  bash ./generate.sh
   popd >/dev/null
   log ok "regenerated protobuf glue"
 }
@@ -84,7 +97,9 @@ replace_imports() {
   pushd "$NETBIRD_DIR" >/dev/null
   go mod edit -dropreplace=golang.zx2c4.com/wireguard || true
   go mod edit -dropreplace=github.com/amnezia-vpn/amneziawg-go || true
-  go mod edit -replace=github.com/amnezia-vpn/amneziawg-go=../amneziawg-go
+  go mod edit -replace=github.com/amnezia-vpn/amneziawg-go="$AWG_GO_DIR"
+  # somehow this helps Android build, idk
+  go get github.com/cloudflare/circl
   go mod tidy
   popd >/dev/null
 
@@ -145,9 +160,11 @@ install_goreleaser_configs() {
 
 main() {
   require_repo "$NETBIRD_DIR" "netbird"
+  require_repo "$ANDROID_DIR" "android"
   require_repo "$AWG_GO_DIR" "amneziawg-go"
 
   apply_patches
+  patch_android
   regenerate_protos
   replace_imports
   set_netbird_version
