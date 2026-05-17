@@ -33,7 +33,8 @@ require_repo() {
 apply_or_skip() {
   local repo_dir="$1"
   local patch_file="$2"
-  local name="$3"
+  local name
+  name=$(basename "$patch_file")
   local apply_opts=(--ignore-space-change --ignore-whitespace --whitespace=nowarn)
 
   if [[ ! -f "$patch_file" ]]; then
@@ -59,8 +60,10 @@ apply_or_skip() {
 }
 
 apply_patches() {
-  apply_or_skip "$AWG_GO_DIR" "$PATCH_DIR/amneziawg-go.patch" "amneziawg-go.patch"
-  apply_or_skip "$NETBIRD_DIR" "$PATCH_DIR/netbird.patch" "netbird.patch"
+  apply_or_skip "$AWG_GO_DIR" "$PATCH_DIR/amneziawg-go.patch"
+  for i in "$PATCH_DIR/netbird/"*; do
+    apply_or_skip "$NETBIRD_DIR" "$i"
+  done
   log ok "patches are applied"
 }
 

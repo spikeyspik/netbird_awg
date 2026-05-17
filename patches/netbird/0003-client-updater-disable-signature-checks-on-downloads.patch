@@ -1,0 +1,35 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: K900 <me@0upti.me>
+Date: Sun, 17 May 2026 15:08:44 +0300
+Subject: [PATCH] client/updater: disable signature checks on downloads
+
+
+diff --git a/client/internal/updater/installer/installer_common.go b/client/internal/updater/installer/installer_common.go
+index 8e44bee82..718f581be 100644
+--- a/client/internal/updater/installer/installer_common.go
++++ b/client/internal/updater/installer/installer_common.go
+@@ -17,7 +17,6 @@ import (
+ 	log "github.com/sirupsen/logrus"
+ 
+ 	"github.com/netbirdio/netbird/client/internal/updater/downloader"
+-	"github.com/netbirdio/netbird/client/internal/updater/reposign"
+ )
+ 
+ type Installer struct {
+@@ -70,16 +69,6 @@ func (u *Installer) RunInstallation(ctx context.Context, targetVersion string) (
+ 			return err
+ 		}
+ 
+-		artifactVerify, err := reposign.NewArtifactVerify(DefaultSigningKeysBaseURL)
+-		if err != nil {
+-			log.Errorf("failed to create artifact verify: %v", err)
+-			return err
+-		}
+-
+-		if err := artifactVerify.Verify(ctx, targetVersion, installerFile); err != nil {
+-			log.Errorf("artifact verification error: %v", err)
+-			return err
+-		}
+ 	}
+ 
+ 	log.Infof("running installer")
