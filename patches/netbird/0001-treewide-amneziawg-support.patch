@@ -6,10 +6,10 @@ Subject: [PATCH] treewide: amneziawg support
 
 diff --git a/client/iface/configurer/amnezia_config.go b/client/iface/configurer/amnezia_config.go
 new file mode 100644
-index 000000000..8ad4f7224
+index 000000000..e437d7a43
 --- /dev/null
 +++ b/client/iface/configurer/amnezia_config.go
-@@ -0,0 +1,21 @@
+@@ -0,0 +1,23 @@
 +package configurer
 +
 +// AmneziaConfig describes AmneziaWG obfuscation parameters.
@@ -21,6 +21,8 @@ index 000000000..8ad4f7224
 +	GetJmax() int32
 +	GetS1() int32
 +	GetS2() int32
++	GetS3() int32
++	GetS4() int32
 +	GetH1() uint32
 +	GetH2() uint32
 +	GetH3() uint32
@@ -32,7 +34,7 @@ index 000000000..8ad4f7224
 +	GetI5() string
 +}
 diff --git a/client/iface/configurer/usp.go b/client/iface/configurer/usp.go
-index 9b070aab8..dcbea6fcb 100644
+index 9b070aab8..aadede353 100644
 --- a/client/iface/configurer/usp.go
 +++ b/client/iface/configurer/usp.go
 @@ -42,23 +42,26 @@ type WGUSPConfigurer struct {
@@ -155,7 +157,7 @@ index 9b070aab8..dcbea6fcb 100644
  	}
  
  	if wgCfg.ListenPort != nil {
-@@ -473,6 +482,53 @@ func toWgUserspaceString(wgCfg wgtypes.Config) string {
+@@ -473,6 +482,59 @@ func toWgUserspaceString(wgCfg wgtypes.Config) string {
  	return sb.String()
  }
  
@@ -175,6 +177,12 @@ index 9b070aab8..dcbea6fcb 100644
 +	}
 +	if val := conf.GetS2(); val > 0 {
 +		sb.WriteString(fmt.Sprintf("s2=%d\n", val))
++	}
++	if val := conf.GetS3(); val > 0 {
++		sb.WriteString(fmt.Sprintf("s3=%d\n", val))
++	}
++	if val := conf.GetS4(); val > 0 {
++		sb.WriteString(fmt.Sprintf("s4=%d\n", val))
 +	}
 +	if val := conf.GetH1(); val > 0 {
 +		sb.WriteString(fmt.Sprintf("h1=%d\n", val))
@@ -432,18 +440,50 @@ index f52392fa2..f1ab1a8d2 100644
  	if err != nil {
  		t.device.Close()
 diff --git a/client/iface/device/kernel_module_linux.go b/client/iface/device/kernel_module_linux.go
-index b28ddd36c..8a61e1ef1 100644
+index b28ddd36c..7a6ecbd46 100644
 --- a/client/iface/device/kernel_module_linux.go
 +++ b/client/iface/device/kernel_module_linux.go
-@@ -85,6 +85,8 @@ func ModuleTunIsLoaded() bool {
+@@ -18,6 +18,8 @@ import (
+ 	log "github.com/sirupsen/logrus"
+ 	"github.com/vishvananda/netlink"
+ 	"golang.org/x/sys/unix"
++
++	"github.com/netbirdio/netbird/client/internal/amneziawg"
+ )
+ 
+ // Holds logic to check existence of kernel modules used by wireguard interfaces
+@@ -84,7 +86,13 @@ func ModuleTunIsLoaded() bool {
+ }
  
  // WireGuardModuleIsLoaded check if we can load WireGuard mod (linux only)
- func WireGuardModuleIsLoaded() bool {
-+	// awg: the kernel path is not supported
-+	return false
+-func WireGuardModuleIsLoaded() bool {
++func WireGuardModuleIsLoaded(conf amneziawg.AmneziaConfig) bool {
++	// AWG kernel mode needs the out-of-tree amneziawg kernel module, which this
++	// distribution does not ship, so force the userspace path when obfuscation is on.
++	// Vanilla (empty config) still uses the in-kernel WireGuard module for speed.
++	if !conf.IsEmpty() {
++		return false
++	}
  
  	if os.Getenv(envDisableWireGuardKernel) == "true" {
  		log.Debugf("WireGuard kernel module disabled because the %s env is set to true", envDisableWireGuardKernel)
+diff --git a/client/iface/device/kernel_module_nonlinux.go b/client/iface/device/kernel_module_nonlinux.go
+index 58d97080b..3a07904dd 100644
+--- a/client/iface/device/kernel_module_nonlinux.go
++++ b/client/iface/device/kernel_module_nonlinux.go
+@@ -2,8 +2,11 @@
+ 
+ package device
+ 
++import "github.com/netbirdio/netbird/client/internal/amneziawg"
++
+ // WireGuardModuleIsLoaded reports whether the kernel WireGuard module is available.
+-func WireGuardModuleIsLoaded() bool {
++// AmneziaWG kernel mode is unsupported off Linux; always false regardless of conf.
++func WireGuardModuleIsLoaded(conf amneziawg.AmneziaConfig) bool {
+ 	return false
+ }
+ 
 diff --git a/client/iface/iface.go b/client/iface/iface.go
 index 247f421a2..f9d891315 100644
 --- a/client/iface/iface.go
@@ -529,10 +569,10 @@ index 9f7a3ba62..17fe11aca 100644
  		wgProxyFactory: wgproxy.NewUSPFactory(relayBind, opts.MTU),
  	}
 diff --git a/client/iface/iface_new_linux.go b/client/iface/iface_new_linux.go
-index 2465130e6..68083309d 100644
+index 2465130e6..da28855c5 100644
 --- a/client/iface/iface_new_linux.go
 +++ b/client/iface/iface_new_linux.go
-@@ -16,7 +16,7 @@ func NewWGIFace(opts WGIFaceOpts) (*WGIface, error) {
+@@ -16,13 +16,13 @@ func NewWGIFace(opts WGIFaceOpts) (*WGIface, error) {
  	if netstack.IsEnabled() {
  		iceBind := bind.NewICEBind(opts.TransportNet, opts.Address, opts.MTU)
  		return &WGIface{
@@ -541,6 +581,13 @@ index 2465130e6..68083309d 100644
  			userspaceBind:  true,
  			wgProxyFactory: wgproxy.NewUSPFactory(iceBind, opts.MTU),
  		}, nil
+ 	}
+ 
+-	if device.WireGuardModuleIsLoaded() {
++	if device.WireGuardModuleIsLoaded(opts.AmneziaConfig) {
+ 		return &WGIface{
+ 			tun:            device.NewKernelDevice(opts.IFaceName, opts.Address, opts.WGPort, opts.WGPrivKey, opts.MTU, opts.TransportNet),
+ 			wgProxyFactory: wgproxy.NewKernelFactory(opts.WGPort, opts.MTU),
 @@ -32,7 +32,7 @@ func NewWGIFace(opts WGIFaceOpts) (*WGIface, error) {
  	if device.ModuleTunIsLoaded() {
  		iceBind := bind.NewICEBind(opts.TransportNet, opts.Address, opts.MTU)
@@ -552,10 +599,10 @@ index 2465130e6..68083309d 100644
  		}, nil
 diff --git a/client/internal/amneziawg/amneziawg.go b/client/internal/amneziawg/amneziawg.go
 new file mode 100644
-index 000000000..e1d171b6a
+index 000000000..d1bfa1feb
 --- /dev/null
 +++ b/client/internal/amneziawg/amneziawg.go
-@@ -0,0 +1,77 @@
+@@ -0,0 +1,85 @@
 +package amneziawg
 +
 +import "github.com/netbirdio/netbird/shared/management/proto"
@@ -568,6 +615,8 @@ index 000000000..e1d171b6a
 +	Jmax int32
 +	S1   int32
 +	S2   int32
++	S3   int32
++	S4   int32
 +	H1   uint32
 +	H2   uint32
 +	H3   uint32
@@ -586,6 +635,8 @@ index 000000000..e1d171b6a
 +		cfg.Jmax == 0 &&
 +		cfg.S1 == 0 &&
 +		cfg.S2 == 0 &&
++		cfg.S3 == 0 &&
++		cfg.S4 == 0 &&
 +		cfg.H1 == 0 &&
 +		cfg.H2 == 0 &&
 +		cfg.H3 == 0 &&
@@ -601,6 +652,8 @@ index 000000000..e1d171b6a
 +func (cfg AmneziaConfig) GetJmax() int32 { return cfg.Jmax }
 +func (cfg AmneziaConfig) GetS1() int32   { return cfg.S1 }
 +func (cfg AmneziaConfig) GetS2() int32   { return cfg.S2 }
++func (cfg AmneziaConfig) GetS3() int32   { return cfg.S3 }
++func (cfg AmneziaConfig) GetS4() int32   { return cfg.S4 }
 +func (cfg AmneziaConfig) GetH1() uint32  { return cfg.H1 }
 +func (cfg AmneziaConfig) GetH2() uint32  { return cfg.H2 }
 +func (cfg AmneziaConfig) GetH3() uint32  { return cfg.H3 }
@@ -622,6 +675,8 @@ index 000000000..e1d171b6a
 +		Jmax: config.GetJmax(),
 +		S1:   config.GetS1(),
 +		S2:   config.GetS2(),
++		S3:   config.GetS3(),
++		S4:   config.GetS4(),
 +		H1:   config.GetH1(),
 +		H2:   config.GetH2(),
 +		H3:   config.GetH3(),
@@ -634,7 +689,7 @@ index 000000000..e1d171b6a
 +	}
 +}
 diff --git a/client/internal/connect.go b/client/internal/connect.go
-index d93b62bb5..332c0692a 100644
+index d93b62bb5..46ab23cdd 100644
 --- a/client/internal/connect.go
 +++ b/client/internal/connect.go
 @@ -14,6 +14,7 @@ import (
@@ -645,6 +700,15 @@ index d93b62bb5..332c0692a 100644
  	log "github.com/sirupsen/logrus"
  
  	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
+@@ -301,7 +302,7 @@ func (c *ConnectClient) run(mobileDependency MobileDependency, runningChan chan
+ 		localPeerState := peer.LocalPeerState{
+ 			IP:              loginResp.GetPeerConfig().GetAddress(),
+ 			PubKey:          myPrivateKey.PublicKey().String(),
+-			KernelInterface: device.WireGuardModuleIsLoaded() && !netstack.IsEnabled(),
++			KernelInterface: device.WireGuardModuleIsLoaded(amneziawg.FromProtobuf(loginResp.GetPeerConfig().GetAmneziaConfig())) && !netstack.IsEnabled(),
+ 			FQDN:            loginResp.GetPeerConfig().GetFqdn(),
+ 		}
+ 		c.statusRecorder.UpdateLocalPeerState(localPeerState)
 @@ -594,6 +595,14 @@ func createEngineConfig(key wgtypes.Key, config *profilemanager.Config, peerConf
  		ProfileConfig: config,
  	}
@@ -746,7 +810,7 @@ index 619f84615..143cc5c54 100644
  
  COPY . .
 diff --git a/management/internals/shared/grpc/conversion.go b/management/internals/shared/grpc/conversion.go
-index ced982a30..0927ec3d0 100644
+index ced982a30..a204813f4 100644
 --- a/management/internals/shared/grpc/conversion.go
 +++ b/management/internals/shared/grpc/conversion.go
 @@ -21,6 +21,7 @@ import (
@@ -757,7 +821,7 @@ index ced982a30..0927ec3d0 100644
  	nbpeer "github.com/netbirdio/netbird/management/server/peer"
  	"github.com/netbirdio/netbird/management/server/posture"
  	"github.com/netbirdio/netbird/management/server/types"
-@@ -135,6 +136,22 @@ func toPeerConfig(peer *nbpeer.Peer, network *types.Network, dnsName string, set
+@@ -135,6 +136,24 @@ func toPeerConfig(peer *nbpeer.Peer, network *types.Network, dnsName string, set
  			Version:      settings.AutoUpdateVersion,
  			AlwaysUpdate: settings.AutoUpdateAlways,
  		},
@@ -767,6 +831,8 @@ index ced982a30..0927ec3d0 100644
 +			Jmax: &amneziawg.Store.Jmax,
 +			S1:   &amneziawg.Store.S1,
 +			S2:   &amneziawg.Store.S2,
++			S3:   &amneziawg.Store.S3,
++			S4:   &amneziawg.Store.S4,
 +			H1:   &amneziawg.Store.H1,
 +			H2:   &amneziawg.Store.H2,
 +			H3:   &amneziawg.Store.H3,
@@ -782,10 +848,10 @@ index ced982a30..0927ec3d0 100644
  	if peer.SupportsIPv6() && peer.IPv6.IsValid() && network.NetV6.IP != nil {
 diff --git a/management/server/amneziawg/amneziawg_env.go b/management/server/amneziawg/amneziawg_env.go
 new file mode 100644
-index 000000000..15320d0ea
+index 000000000..8987017c0
 --- /dev/null
 +++ b/management/server/amneziawg/amneziawg_env.go
-@@ -0,0 +1,211 @@
+@@ -0,0 +1,241 @@
 +package amneziawg
 +
 +import (
@@ -799,6 +865,8 @@ index 000000000..15320d0ea
 +	envAmneziaJmax = "NETBIRD_AMNEZIA_JMAX"
 +	envAmneziaS1   = "NETBIRD_AMNEZIA_S1"
 +	envAmneziaS2   = "NETBIRD_AMNEZIA_S2"
++	envAmneziaS3   = "NETBIRD_AMNEZIA_S3"
++	envAmneziaS4   = "NETBIRD_AMNEZIA_S4"
 +	envAmneziaH1   = "NETBIRD_AMNEZIA_H1"
 +	envAmneziaH2   = "NETBIRD_AMNEZIA_H2"
 +	envAmneziaH3   = "NETBIRD_AMNEZIA_H3"
@@ -816,6 +884,8 @@ index 000000000..15320d0ea
 +	Jmax int32
 +	S1   int32
 +	S2   int32
++	S3   int32
++	S4   int32
 +	H1   uint32
 +	H2   uint32
 +	H3   uint32
@@ -837,6 +907,8 @@ index 000000000..15320d0ea
 +		Jmax: getAmneziaWgJmax(),
 +		S1:   getAmneziaWgS1(),
 +		S2:   getAmneziaWgS2(),
++		S3:   getAmneziaWgS3(),
++		S4:   getAmneziaWgS4(),
 +		H1:   getAmneziaWgH1(),
 +		H2:   getAmneziaWgH2(),
 +		H3:   getAmneziaWgH3(),
@@ -900,6 +972,30 @@ index 000000000..15320d0ea
 +func getAmneziaWgS2() int32 {
 +
 +	strval, ok := os.LookupEnv(envAmneziaS2)
++	if !ok {
++		return 0
++	}
++	val, err := strconv.ParseInt(strval, 10, 32)
++	if err != nil {
++		return 0
++	}
++	return int32(val)
++}
++func getAmneziaWgS3() int32 {
++
++	strval, ok := os.LookupEnv(envAmneziaS3)
++	if !ok {
++		return 0
++	}
++	val, err := strconv.ParseInt(strval, 10, 32)
++	if err != nil {
++		return 0
++	}
++	return int32(val)
++}
++func getAmneziaWgS4() int32 {
++
++	strval, ok := os.LookupEnv(envAmneziaS4)
 +	if !ok {
 +		return 0
 +	}
@@ -998,7 +1094,7 @@ index 000000000..15320d0ea
 +	return val
 +}
 diff --git a/shared/management/proto/management.proto b/shared/management/proto/management.proto
-index 990a72a63..ffa90b6bd 100644
+index 990a72a63..0eb75859b 100644
 --- a/shared/management/proto/management.proto
 +++ b/shared/management/proto/management.proto
 @@ -394,6 +394,9 @@ message PeerConfig {
@@ -1011,7 +1107,7 @@ index 990a72a63..ffa90b6bd 100644
  }
  
  message AutoUpdateSettings {
-@@ -751,3 +754,36 @@ message StopExposeRequest {
+@@ -751,3 +754,40 @@ message StopExposeRequest {
  }
  
  message StopExposeResponse {}
@@ -1029,6 +1125,10 @@ index 990a72a63..ffa90b6bd 100644
 +  optional int32 s1 = 4;
 +  // Response packet junk size
 +  optional int32 s2 = 5;
++  // Cookie packet junk size (AWG 2.0)
++  optional int32 s3 = 15;
++  // Transport packet junk size (AWG 2.0)
++  optional int32 s4 = 16;
 +  // Init packet magic header 1
 +  optional uint32 h1 = 6;
 +  // Init packet magic header 2
