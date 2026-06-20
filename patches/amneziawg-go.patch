@@ -125,16 +125,135 @@ index 2fdf85c..96a6483 100644
 +	peer.SendStagedPackets()
 +	return nil
 +}
+diff --git a/device/pool_size_netbird.go b/device/pool_size_netbird.go
+new file mode 100644
+index 0000000..00461af
+--- /dev/null
++++ b/device/pool_size_netbird.go
+@@ -0,0 +1,54 @@
++/* SPDX-License-Identifier: MIT
++ *
++ * NetBird AWG fork addition.
++ *
++ * Mirrors netbirdio/wireguard-go's device/pool_size.go so the NetBird client can
++ * tune buffer pools both before device creation (package-level setters) and on a
++ * live device (Device.SetPreallocatedBuffersPerPool). amneziawg-go's WaitPool has
++ * no dedicated `tracked` field, so SetMax follows amneziawg-go's own convention
++ * where a cap of zero means "uncapped/untracked".
++ */
++
++package device
++
++// MaxBatchSizeOverride exists for API parity with netbirdio/wireguard-go. amneziawg-go
++// has no batch-size override path, so setting it has no effect; the symbol is kept so
++// callers (e.g. the NetBird embeddable client) compile and run unchanged.
++var MaxBatchSizeOverride uint32 = 0
++
++// SetPreallocatedBuffersPerPool sets the global cap applied to the pools of Devices
++// created after this call. Zero disables the cap. To retune a live Device, use
++// Device.SetPreallocatedBuffersPerPool.
++func SetPreallocatedBuffersPerPool(n uint32) {
++	PreallocatedBuffersPerPool = n
++}
++
++// SetMaxBatchSizeOverride sets the global batch-size override. No-op in amneziawg-go
++// (see MaxBatchSizeOverride); kept for API parity.
++func SetMaxBatchSizeOverride(n uint32) {
++	MaxBatchSizeOverride = n
++}
++
++// SetMax updates the cap on this pool in place. Pools created uncapped
++// (PreallocatedBuffersPerPool == 0) stay on the untracked fast path and are left
++// unchanged; only already-capped pools (e.g. on mobile defaults) are retuned.
++func (p *WaitPool) SetMax(n uint32) {
++	p.lock.Lock()
++	defer p.lock.Unlock()
++	if p.max == 0 {
++		return
++	}
++	p.max = n
++	p.cond.Broadcast()
++}
++
++// SetPreallocatedBuffersPerPool updates the cap on this Device's pools in place.
++// Takes effect immediately; goroutines blocked in Get are unblocked if the cap was
++// raised. Has no effect on pools created with PreallocatedBuffersPerPool == 0.
++func (device *Device) SetPreallocatedBuffersPerPool(n uint32) {
++	device.pool.messageBuffers.SetMax(n)
++	device.pool.inboundElements.SetMax(n)
++	device.pool.outboundElements.SetMax(n)
++	device.pool.inboundElementsContainer.SetMax(n)
++	device.pool.outboundElementsContainer.SetMax(n)
++}
+diff --git a/device/queueconstants_android.go b/device/queueconstants_android.go
+index 741fcf3..d4d9153 100644
+--- a/device/queueconstants_android.go
++++ b/device/queueconstants_android.go
+@@ -10,10 +10,13 @@ import "github.com/amnezia-vpn/amneziawg-go/conn"
+ /* Reduce memory consumption for Android */
+ 
+ const (
+-	QueueStagedSize            = conn.IdealBatchSize
+-	QueueOutboundSize          = 1024
+-	QueueInboundSize           = 1024
+-	QueueHandshakeSize         = 1024
+-	MaxSegmentSize             = (1 << 16) - 1 // largest possible UDP datagram
+-	PreallocatedBuffersPerPool = 4096
++	QueueStagedSize    = conn.IdealBatchSize
++	QueueOutboundSize  = 1024
++	QueueInboundSize   = 1024
++	QueueHandshakeSize = 1024
++	MaxSegmentSize     = (1 << 16) - 1 // largest possible UDP datagram
+ )
++
++// PreallocatedBuffersPerPool is a var (not const) so the NetBird client can retune the
++// pool cap at runtime via SetPreallocatedBuffersPerPool.
++var PreallocatedBuffersPerPool uint32 = 4096
+diff --git a/device/queueconstants_default.go b/device/queueconstants_default.go
+index f19e9b1..11ff2d5 100644
+--- a/device/queueconstants_default.go
++++ b/device/queueconstants_default.go
+@@ -10,10 +10,13 @@ package device
+ import "github.com/amnezia-vpn/amneziawg-go/conn"
+ 
+ const (
+-	QueueStagedSize            = conn.IdealBatchSize
+-	QueueOutboundSize          = 1024
+-	QueueInboundSize           = 1024
+-	QueueHandshakeSize         = 1024
+-	MaxSegmentSize             = (1 << 16) - 1 // largest possible UDP datagram
+-	PreallocatedBuffersPerPool = 0             // Disable and allow for infinite memory growth
++	QueueStagedSize    = conn.IdealBatchSize
++	QueueOutboundSize  = 1024
++	QueueInboundSize   = 1024
++	QueueHandshakeSize = 1024
++	MaxSegmentSize     = (1 << 16) - 1 // largest possible UDP datagram
+ )
++
++// PreallocatedBuffersPerPool is a var (not const) so the NetBird client can retune the
++// pool cap at runtime via SetPreallocatedBuffersPerPool. 0 disables the cap.
++var PreallocatedBuffersPerPool uint32 = 0
 diff --git a/device/queueconstants_windows.go b/device/queueconstants_windows.go
-index 9a296d6..425b2ea 100644
+index 9a296d6..2449a02 100644
 --- a/device/queueconstants_windows.go
 +++ b/device/queueconstants_windows.go
-@@ -10,6 +10,6 @@ const (
- 	QueueOutboundSize          = 1024
- 	QueueInboundSize           = 1024
- 	QueueHandshakeSize         = 1024
+@@ -6,10 +6,13 @@
+ package device
+ 
+ const (
+-	QueueStagedSize            = 128
+-	QueueOutboundSize          = 1024
+-	QueueInboundSize           = 1024
+-	QueueHandshakeSize         = 1024
 -	MaxSegmentSize             = 2048 - 32 // largest possible UDP datagram
 -	PreallocatedBuffersPerPool = 0         // Disable and allow for infinite memory growth
-+	MaxSegmentSize             = 65535 // Match with WINTUN_MAX_IP_PACKET_SIZE macro definition
-+	PreallocatedBuffersPerPool = 0     // Disable and allow for infinite memory growth
++	QueueStagedSize    = 128
++	QueueOutboundSize  = 1024
++	QueueInboundSize   = 1024
++	QueueHandshakeSize = 1024
++	MaxSegmentSize     = 65535 // Match with WINTUN_MAX_IP_PACKET_SIZE macro definition
  )
++
++// PreallocatedBuffersPerPool is a var (not const) so the NetBird client can retune the
++// pool cap at runtime via SetPreallocatedBuffersPerPool. 0 disables the cap.
++var PreallocatedBuffersPerPool uint32 = 0

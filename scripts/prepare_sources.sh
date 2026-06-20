@@ -66,6 +66,14 @@ apply_patches() {
 
 regenerate_protos() {
   log debug "regenerating protobuf glue"
+  # generate.sh installs protoc-gen-go / protoc-gen-go-grpc via `go install`, then
+  # invokes protoc which looks them up on PATH. CI gets this for free via setup-go,
+  # but local runs may not have the Go bin dir on PATH — add it so protoc can find
+  # the plugins instead of failing with "protoc-gen-go: program not found".
+  local gobin
+  gobin="$(go env GOBIN)"
+  [ -n "$gobin" ] || gobin="$(go env GOPATH)/bin"
+  export PATH="$gobin:$PATH"
   pushd "$NETBIRD_DIR/shared/management/proto" >/dev/null
   ./generate.sh
   popd >/dev/null
