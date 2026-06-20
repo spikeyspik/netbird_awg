@@ -114,7 +114,11 @@ set_netbird_version() {
     exit 1
   fi
 
-  perl -0pi -e 's/var version = "[^"]*"/var version = "'"$NETBIRD_RELEASE_TAG"'"/g' "$version_file"
+  # Newer NetBird releases declare this as `var version = DevelopmentVersion` (an
+  # unquoted const reference) instead of a quoted literal, so match any RHS. Release
+  # binaries are stamped via goreleaser ldflags regardless; this keeps plain `go build`
+  # and the embeddable client reporting the AWG version too.
+  perl -0pi -e 's/var version\s*=\s*[^\n]+/var version = "'"$NETBIRD_RELEASE_TAG"'"/' "$version_file"
   local current
   current="$(grep -n '^var version = ' "$version_file" | head -n 1 | sed 's/.*= //')"
   log ok "netbird source version set to $current"
