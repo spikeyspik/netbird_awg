@@ -210,10 +210,11 @@ jobs:
       - name: Build netbird-server binary
         run: |
           cd "$GITHUB_WORKSPACE/workdir/repos/netbird"
+          mkdir -p linux/amd64
           CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build \
             -trimpath \
             -ldflags="-s -w -X github.com/netbirdio/netbird/version.version=${NETBIRD_RELEASE_TAG} -X main.commit=${GITHUB_SHA} -X main.date=$(date -u +%Y-%m-%dT%H:%M:%SZ) -X main.builtBy=github-actions" \
-            -o netbird-server ./combined
+            -o linux/amd64/netbird-server ./combined
 
       - name: Setup Buildx
         uses: docker/setup-buildx-action@v3
