@@ -552,13 +552,16 @@ index 2465130e6..68083309d 100644
  		}, nil
 diff --git a/client/internal/amneziawg/amneziawg.go b/client/internal/amneziawg/amneziawg.go
 new file mode 100644
-index 000000000..e1d171b6a
+index 000000000..306cf395a
 --- /dev/null
 +++ b/client/internal/amneziawg/amneziawg.go
-@@ -0,0 +1,77 @@
+@@ -0,0 +1,110 @@
 +package amneziawg
 +
-+import "github.com/netbirdio/netbird/shared/management/proto"
++import (
++	mgmProto "github.com/netbirdio/netbird/shared/management/proto"
++	"google.golang.org/protobuf/proto"
++)
 +
 +// AmneziaConfig describes AmneziaWG obfuscation parameters.
 +// If nil or all fields are zero, it behaves as standard WireGuard.
@@ -611,7 +614,19 @@ index 000000000..e1d171b6a
 +func (cfg AmneziaConfig) GetI4() string  { return cfg.I4 }
 +func (cfg AmneziaConfig) GetI5() string  { return cfg.I5 }
 +
-+func FromProtobuf(config *proto.AmneziaConfig) AmneziaConfig {
++func FromPeerConfig(peerConfig *mgmProto.PeerConfig) AmneziaConfig {
++	if peerConfig == nil {
++		return AmneziaConfig{}
++	}
++
++	if legacyConfig, ok := fromLegacyField9(peerConfig.GetAddressV6()); ok {
++		return legacyConfig
++	}
++
++	return FromProtobuf(peerConfig.GetAmneziaConfig())
++}
++
++func FromProtobuf(config *mgmProto.AmneziaConfig) AmneziaConfig {
 +	if config == nil {
 +		return AmneziaConfig{}
 +	}
@@ -633,8 +648,26 @@ index 000000000..e1d171b6a
 +		I5:   config.GetI5(),
 +	}
 +}
++
++func fromLegacyField9(raw []byte) (AmneziaConfig, bool) {
++	if len(raw) == 0 {
++		return AmneziaConfig{}, false
++	}
++
++	var legacy mgmProto.AmneziaConfig
++	if err := proto.Unmarshal(raw, &legacy); err != nil {
++		return AmneziaConfig{}, false
++	}
++
++	cfg := FromProtobuf(&legacy)
++	if cfg.IsEmpty() {
++		return AmneziaConfig{}, false
++	}
++
++	return cfg, true
++}
 diff --git a/client/internal/connect.go b/client/internal/connect.go
-index d93b62bb5..332c0692a 100644
+index d93b62bb5..e8a887b0e 100644
 --- a/client/internal/connect.go
 +++ b/client/internal/connect.go
 @@ -14,6 +14,7 @@ import (
@@ -645,23 +678,22 @@ index d93b62bb5..332c0692a 100644
  	log "github.com/sirupsen/logrus"
  
  	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
-@@ -594,6 +595,14 @@ func createEngineConfig(key wgtypes.Key, config *profilemanager.Config, peerConf
+@@ -594,6 +595,13 @@ func createEngineConfig(key wgtypes.Key, config *profilemanager.Config, peerConf
  		ProfileConfig: config,
  	}
  
-+	if peerConfig.AmneziaConfig != nil {
-+		engineConf.AmneziaConfig = amneziawg.FromProtobuf(peerConfig.AmneziaConfig)
-+		log.Infof("Init amneziaWG config from peer: %v", engineConf.AmneziaConfig)
-+	} else {
-+		engineConf.AmneziaConfig = amneziawg.AmneziaConfig{}
++	engineConf.AmneziaConfig = amneziawg.FromPeerConfig(peerConfig)
++	if engineConf.AmneziaConfig.IsEmpty() {
 +		log.Infof("Init empty amneziaWG config")
++	} else {
++		log.Infof("Init amneziaWG config from peer: %v", engineConf.AmneziaConfig)
 +	}
 +
  	if config.PreSharedKey != "" {
  		preSharedKey, err := wgtypes.ParseKey(config.PreSharedKey)
  		if err != nil {
 diff --git a/client/internal/engine.go b/client/internal/engine.go
-index 42712da92..d8341d6e3 100644
+index 42712da92..47abda3df 100644
 --- a/client/internal/engine.go
 +++ b/client/internal/engine.go
 @@ -17,6 +17,7 @@ import (
@@ -685,7 +717,7 @@ index 42712da92..d8341d6e3 100644
  		return ErrResetConnection
  	}
  
-+	nextAmneziaConfig := amneziawg.FromProtobuf(conf.GetAmneziaConfig())
++	nextAmneziaConfig := amneziawg.FromPeerConfig(conf)
 +	if e.config.AmneziaConfig != nextAmneziaConfig {
 +		log.Infof("amneziaWG config changed, restarting engine to apply new settings")
 +		e.config.AmneziaConfig = nextAmneziaConfig
@@ -699,10 +731,24 @@ index 42712da92..d8341d6e3 100644
  	if conf.GetSshConfig() != nil {
  		if err := e.updateSSH(conf.GetSshConfig()); err != nil {
  			log.Warnf("failed handling SSH server setup: %v", err)
-@@ -1920,6 +1934,7 @@ func (e *Engine) newWgIface() (*iface.WGIface, error) {
- 		MTU:          e.config.MTU,
- 		TransportNet: transportNet,
- 		DisableDNS:   e.config.DisableDNS,
+@@ -1913,13 +1927,14 @@ func (e *Engine) newWgIface() (*iface.WGIface, error) {
+ 	}
+ 
+ 	opts := iface.WGIFaceOpts{
+-		IFaceName:    e.config.WgIfaceName,
+-		Address:      e.config.WgAddr,
+-		WGPort:       e.config.WgPort,
+-		WGPrivKey:    e.config.WgPrivateKey.String(),
+-		MTU:          e.config.MTU,
+-		TransportNet: transportNet,
+-		DisableDNS:   e.config.DisableDNS,
++		IFaceName:     e.config.WgIfaceName,
++		Address:       e.config.WgAddr,
++		WGPort:        e.config.WgPort,
++		WGPrivKey:     e.config.WgPrivateKey.String(),
++		MTU:           e.config.MTU,
++		TransportNet:  transportNet,
++		DisableDNS:    e.config.DisableDNS,
 +		AmneziaConfig: e.config.AmneziaConfig,
  	}
  
@@ -746,7 +792,7 @@ index 619f84615..143cc5c54 100644
  
  COPY . .
 diff --git a/management/internals/shared/grpc/conversion.go b/management/internals/shared/grpc/conversion.go
-index ced982a30..0927ec3d0 100644
+index ced982a30..85d7b869d 100644
 --- a/management/internals/shared/grpc/conversion.go
 +++ b/management/internals/shared/grpc/conversion.go
 @@ -21,6 +21,7 @@ import (
@@ -757,29 +803,98 @@ index ced982a30..0927ec3d0 100644
  	nbpeer "github.com/netbirdio/netbird/management/server/peer"
  	"github.com/netbirdio/netbird/management/server/posture"
  	"github.com/netbirdio/netbird/management/server/types"
-@@ -135,6 +136,22 @@ func toPeerConfig(peer *nbpeer.Peer, network *types.Network, dnsName string, set
+@@ -32,12 +33,16 @@ import (
+ 
+ const (
+ 	// deprecatedRemotePeersVersion is the version of Netbird that introduced the NetworkMap.RemotePeers field, deprecated in favor of RemotePeers.
+-	deprecatedRemotePeersVersion = "0.29.3"
++	deprecatedRemotePeersVersion      = "0.29.3"
++	amneziaConfigNewProtoFieldVersion = "0.73.0"
+ )
+ 
+ // precomputedDeprecatedRemotePeersConstraint is the parsed ">= 0.29.3" constraint,
+ // built once at init since the bound is a compile-time constant.
+-var precomputedDeprecatedRemotePeersConstraint version.Constraints
++var (
++	precomputedDeprecatedRemotePeersConstraint version.Constraints
++	precomputedAmneziaConfigLegacyConstraint   version.Constraints
++)
+ 
+ func init() {
+ 	constraint, err := version.NewConstraint(">= " + deprecatedRemotePeersVersion)
+@@ -45,6 +50,12 @@ func init() {
+ 		panic("parse deprecated remote peers version constraint: " + err.Error())
+ 	}
+ 	precomputedDeprecatedRemotePeersConstraint = constraint
++
++	constraint, err = version.NewConstraint("< " + amneziaConfigNewProtoFieldVersion)
++	if err != nil {
++		panic("parse amnezia config legacy version constraint: " + err.Error())
++	}
++	precomputedAmneziaConfigLegacyConstraint = constraint
+ }
+ 
+ func toNetbirdConfig(config *nbconfig.Config, turnCredentials *Token, relayToken *Token, extraSettings *types.ExtraSettings) *proto.NetbirdConfig {
+@@ -125,6 +136,23 @@ func toPeerConfig(peer *nbpeer.Peer, network *types.Network, dnsName string, set
+ 		sshConfig.JwtConfig = buildJWTConfig(httpConfig, deviceFlowConfig)
+ 	}
+ 
++	amneziaConfig := &proto.AmneziaConfig{
++		Jc:   &amneziawg.Store.Jc,
++		Jmin: &amneziawg.Store.Jmin,
++		Jmax: &amneziawg.Store.Jmax,
++		S1:   &amneziawg.Store.S1,
++		S2:   &amneziawg.Store.S2,
++		H1:   &amneziawg.Store.H1,
++		H2:   &amneziawg.Store.H2,
++		H3:   &amneziawg.Store.H3,
++		H4:   &amneziawg.Store.H4,
++		I1:   &amneziawg.Store.I1,
++		I2:   &amneziawg.Store.I2,
++		I3:   &amneziawg.Store.I3,
++		I4:   &amneziawg.Store.I4,
++		I5:   &amneziawg.Store.I5,
++	}
++
+ 	peerConfig := &proto.PeerConfig{
+ 		Address:                         fmt.Sprintf("%s/%d", peer.IP.String(), netmask),
+ 		SshConfig:                       sshConfig,
+@@ -135,6 +163,15 @@ func toPeerConfig(peer *nbpeer.Peer, network *types.Network, dnsName string, set
  			Version:      settings.AutoUpdateVersion,
  			AlwaysUpdate: settings.AutoUpdateAlways,
  		},
-+		AmneziaConfig: &proto.AmneziaConfig{
-+			Jc:   &amneziawg.Store.Jc,
-+			Jmin: &amneziawg.Store.Jmin,
-+			Jmax: &amneziawg.Store.Jmax,
-+			S1:   &amneziawg.Store.S1,
-+			S2:   &amneziawg.Store.S2,
-+			H1:   &amneziawg.Store.H1,
-+			H2:   &amneziawg.Store.H2,
-+			H3:   &amneziawg.Store.H3,
-+			H4:   &amneziawg.Store.H4,
-+			I1:   &amneziawg.Store.I1,
-+			I2:   &amneziawg.Store.I2,
-+			I3:   &amneziawg.Store.I3,
-+			I4:   &amneziawg.Store.I4,
-+			I5:   &amneziawg.Store.I5,
-+		},
++		AmneziaConfig: amneziaConfig,
++	}
++
++	if useLegacyAmneziaConfigField(peer.Meta.WtVersion) {
++		if b, err := goproto.Marshal(amneziaConfig); err == nil {
++			peerConfig.AddressV6 = b
++			peerConfig.AmneziaConfig = nil
++		}
++		return peerConfig
  	}
  
  	if peer.SupportsIPv6() && peer.IPv6.IsValid() && network.NetV6.IP != nil {
+@@ -148,6 +185,19 @@ func toPeerConfig(peer *nbpeer.Peer, network *types.Network, dnsName string, set
+ 	return peerConfig
+ }
+ 
++func useLegacyAmneziaConfigField(peerVersion string) bool {
++	if peerVersion == "" || peerVersion == "development" {
++		return false
++	}
++
++	v, err := version.NewVersion(strings.TrimPrefix(peerVersion, "v"))
++	if err != nil {
++		return false
++	}
++
++	return precomputedAmneziaConfigLegacyConstraint.Check(v)
++}
++
+ func ToSyncResponse(ctx context.Context, config *nbconfig.Config, httpConfig *nbconfig.HttpServerConfig, deviceFlowConfig *nbconfig.DeviceAuthorizationFlow, peer *nbpeer.Peer, turnCredentials *Token, relayCredentials *Token, networkMap *types.NetworkMap, dnsName string, checks []*posture.Checks, dnsCache *cache.DNSConfigCache, settings *types.Settings, extraSettings *types.ExtraSettings, peerGroups []string, dnsFwdPort int64) *proto.SyncResponse {
+ 	// IPv6 data in AllowedIPs and SourcePrefixes wildcard expansion depends on
+ 	// whether the target peer supports IPv6. Routes and firewall rules are already
 diff --git a/management/server/amneziawg/amneziawg_env.go b/management/server/amneziawg/amneziawg_env.go
 new file mode 100644
 index 000000000..15320d0ea
