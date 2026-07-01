@@ -792,7 +792,7 @@ index 619f84615..143cc5c54 100644
  
  COPY . .
 diff --git a/management/internals/shared/grpc/conversion.go b/management/internals/shared/grpc/conversion.go
-index ced982a30..85d7b869d 100644
+index ced982a30..a4c173fed 100644
 --- a/management/internals/shared/grpc/conversion.go
 +++ b/management/internals/shared/grpc/conversion.go
 @@ -21,6 +21,7 @@ import (
@@ -875,7 +875,7 @@ index ced982a30..85d7b869d 100644
  	}
  
  	if peer.SupportsIPv6() && peer.IPv6.IsValid() && network.NetV6.IP != nil {
-@@ -148,6 +185,19 @@ func toPeerConfig(peer *nbpeer.Peer, network *types.Network, dnsName string, set
+@@ -148,6 +185,27 @@ func toPeerConfig(peer *nbpeer.Peer, network *types.Network, dnsName string, set
  	return peerConfig
  }
  
@@ -884,12 +884,20 @@ index ced982a30..85d7b869d 100644
 +		return false
 +	}
 +
-+	v, err := version.NewVersion(strings.TrimPrefix(peerVersion, "v"))
++	v, err := version.NewVersion(baseNetbirdVersion(peerVersion))
 +	if err != nil {
 +		return false
 +	}
 +
 +	return precomputedAmneziaConfigLegacyConstraint.Check(v)
++}
++
++func baseNetbirdVersion(peerVersion string) string {
++	peerVersion = strings.TrimPrefix(strings.TrimSpace(peerVersion), "v")
++	if before, _, ok := strings.Cut(peerVersion, "-"); ok {
++		return before
++	}
++	return peerVersion
 +}
 +
  func ToSyncResponse(ctx context.Context, config *nbconfig.Config, httpConfig *nbconfig.HttpServerConfig, deviceFlowConfig *nbconfig.DeviceAuthorizationFlow, peer *nbpeer.Peer, turnCredentials *Token, relayCredentials *Token, networkMap *types.NetworkMap, dnsName string, checks []*posture.Checks, dnsCache *cache.DNSConfigCache, settings *types.Settings, extraSettings *types.ExtraSettings, peerGroups []string, dnsFwdPort int64) *proto.SyncResponse {
