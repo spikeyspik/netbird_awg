@@ -11,6 +11,7 @@ WORKDIR="${WORKDIR:-$ROOT_DIR/workdir}"
 REPOS_DIR="$WORKDIR/repos"
 
 NETBIRD_REPO="${NETBIRD_REPO:-https://github.com/netbirdio/netbird.git}"
+ANDROID_REPO="${ANDROID_REPO:-https://github.com/netbirdio/android-client.git}"
 
 AWG_GO_REPO="${AWG_GO_REPO:-https://github.com/amnezia-vpn/amneziawg-go.git}"
 AWG_GO_REF="${AWG_GO_REF:-449d7cffd4adf86971bd679d0be5384b443e8be5}"
@@ -37,6 +38,7 @@ clone_and_checkout() {
 mkdir -p "$REPOS_DIR"
 
 clone_and_checkout "$NETBIRD_REPO" "$REPOS_DIR/netbird" "$NETBIRD_REF"
+clone_and_checkout "$ANDROID_REPO" "$REPOS_DIR/android" "$ANDROID_REF"
 clone_and_checkout "$AWG_GO_REPO" "$REPOS_DIR/amneziawg-go" "$AWG_GO_REF"
 
 echo "[ok] sources are prepared in $REPOS_DIR"
