@@ -1,0 +1,41 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: spikeyspik <24636111+spikeyspik@users.noreply.github.com>
+Date: Mon, 27 Jul 2026 00:00:00 +0300
+Subject: [PATCH] client: killswitch
+
+
+diff --git a/client/internal/dns/local/local.go b/client/internal/dns/local/local.go
+index fef35fd41..115aeb5c4 100644
+--- a/client/internal/dns/local/local.go
++++ b/client/internal/dns/local/local.go
+@@ -531,13 +531,13 @@ func (d *Resolver) logDNSError(logger *log.Entry, hostname string, qtype uint16,
+ // non-mesh upstreams) are never dropped. Non-A/AAAA records pass
+ // through untouched.
+ //
+-// Escape hatch: if filtering would leave the answer empty AND at least
+-// one record was filtered, the original list is returned. Better to
+-// hand the client a record that may not respond than NXDOMAIN it
+-// completely when every proxy peer is offline (the upstream may still
+-// be reachable some other way, or the peerstore may be stale).
++// If all A/AAAA answers point at disconnected peers, return an empty
++// answer. This is intentional fail-closed behavior: as long as NetBird
++// is running and the host is known in the local config, traffic must not
++// fall back to a non-NetBird path just because every matching peer is
++// currently unavailable.
+ func (d *Resolver) filterDisconnectedPeerAnswers(logger *log.Entry, question dns.Question, records []dns.RR) []dns.RR {
+-	if len(records) < 2 {
++	if len(records) == 0 {
+ 		return records
+ 	}
+ 	d.mu.RLock()
+@@ -566,8 +566,8 @@ func (d *Resolver) filterDisconnectedPeerAnswers(logger *log.Entry, question dns
+ 		return records
+ 	}
+ 	if len(kept) == 0 {
+-		logger.Debugf("all %d answers for %s point at disconnected peers; returning the original list", dropped, question.Name)
+-		return records
++		logger.Debugf("all %d answers for %s point at disconnected peers; returning an empty answer", dropped, question.Name)
++		return kept
+ 	}
+ 	logger.Tracef("dropped %d disconnected-peer answer(s) for %s, returning %d", dropped, question.Name, len(kept))
+ 	return kept
