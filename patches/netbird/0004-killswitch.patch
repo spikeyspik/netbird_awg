@@ -5,7 +5,7 @@ Subject: [PATCH] client: killswitch
 
 
 diff --git a/client/internal/dns/local/local.go b/client/internal/dns/local/local.go
-index fef35fd..655ab28 100644
+index fef35fd41..655ab283b 100644
 --- a/client/internal/dns/local/local.go
 +++ b/client/internal/dns/local/local.go
 @@ -531,13 +531,14 @@ func (d *Resolver) logDNSError(logger *log.Entry, hostname string, qtype uint16,
@@ -70,7 +70,7 @@ index fef35fd..655ab28 100644
  // answer points at and waits briefly for one to connect, so the caller's first
  // request doesn't race the connection establishment. Warm-up is scoped to
 diff --git a/client/internal/routemanager/dnsinterceptor/handler.go b/client/internal/routemanager/dnsinterceptor/handler.go
-index b784cc2..2b4022a 100644
+index b784cc274..2b4022a7e 100644
 --- a/client/internal/routemanager/dnsinterceptor/handler.go
 +++ b/client/internal/routemanager/dnsinterceptor/handler.go
 @@ -283,15 +283,50 @@ func (d *DnsInterceptor) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
@@ -127,3 +127,334 @@ index b784cc2..2b4022a 100644
  func (d *DnsInterceptor) getUpstreamIP(peerKey string) (netip.Addr, error) {
  	peerAllowedIP, exists := d.peerStore.AllowedIP(peerKey)
  	if !exists {
+diff --git a/client/server/server.go b/client/server/server.go
+index 8047006fe..c4989fe5c 100644
+--- a/client/server/server.go
++++ b/client/server/server.go
+@@ -116,7 +116,9 @@ type Server struct {
+ 	activeCapture    *capture.Session
+ 	networksDisabled bool
+ 
+-	sleepHandler *sleephandler.SleepHandler
++	sleepHandler  *sleephandler.SleepHandler
++	wakeBarrier   wakeRouteBarrier
++	wakeBarrierMu sync.Mutex
+ 
+ 	// mdmTicker periodically re-reads the OS-native MDM policy and triggers
+ 	// an engine restart when the policy changes. Launched once by Start;
+@@ -856,7 +858,11 @@ func (s *Server) Up(callerCtx context.Context, msg *proto.UpRequest) (*proto.UpR
+ 		}
+ 		s.mutex.Unlock()
+ 
+-		return s.waitForUp(callerCtx)
++		resp, err := s.waitForUp(callerCtx)
++		if err == nil {
++			s.clearWakeRouteBarrier()
++		}
++		return resp, err
+ 	}
+ 	if err := RestoreResidualState(callerCtx, s.profileManager.GetStatePath()); err != nil {
+ 		log.Warnf(errRestoreResidualState, err)
+@@ -957,7 +963,11 @@ func (s *Server) Up(callerCtx context.Context, msg *proto.UpRequest) (*proto.UpR
+ 	if msg.GetAsync() {
+ 		return &proto.UpResponse{}, nil
+ 	}
+-	return s.waitForUp(callerCtx)
++	resp, err := s.waitForUp(callerCtx)
++	if err == nil {
++		s.clearWakeRouteBarrier()
++	}
++	return resp, err
+ }
+ 
+ // todo: handle potential race conditions
+diff --git a/client/server/sleep.go b/client/server/sleep.go
+index 877ad9690..9c475e9cf 100644
+--- a/client/server/sleep.go
++++ b/client/server/sleep.go
+@@ -4,6 +4,7 @@ import (
+ 	"context"
+ 	"os"
+ 	"strconv"
++	"time"
+ 
+ 	log "github.com/sirupsen/logrus"
+ 
+@@ -14,6 +15,15 @@ import (
+ 
+ const envDisableSleepDetector = "NB_DISABLE_SLEEP_DETECTOR"
+ 
++const (
++	wakeRestartStopTimeout = 15 * time.Second
++	wakeRestartUpTimeout   = 90 * time.Second
++)
++
++type wakeRouteBarrier interface {
++	Close()
++}
++
+ // serverAgent adapts Server to the handler.Agent and handler.StatusChecker interfaces
+ type serverAgent struct {
+ 	s *Server
+@@ -52,15 +62,10 @@ func (s *Server) startSleepDetector() {
+ 	err = svc.Register(func(event sleep.EventType) {
+ 		switch event {
+ 		case sleep.EventTypeSleep:
+-			log.Info("handling sleep event")
+-			if err := s.sleepHandler.HandleSleep(s.rootCtx); err != nil {
+-				log.Errorf("failed to handle sleep event: %v", err)
+-			}
++			log.Info("sleep event detected; keeping agent up to preserve routing")
+ 		case sleep.EventTypeWakeUp:
+-			log.Info("handling wakeup event")
+-			if err := s.sleepHandler.HandleWakeUp(s.rootCtx); err != nil {
+-				log.Errorf("failed to handle wakeup event: %v", err)
+-			}
++			log.Info("wakeup event detected; restarting agent with route killswitch barrier")
++			go s.restartAfterWakeWithBarrier()
+ 		}
+ 	})
+ 	if err != nil {
+@@ -91,3 +96,75 @@ func sleepDetectorDisabled() bool {
+ 	}
+ 	return disabled
+ }
++
++func (s *Server) restartAfterWakeWithBarrier() {
++	s.mutex.Lock()
++	if !s.clientRunning || s.actCancel == nil {
++		s.mutex.Unlock()
++		log.Info("skipping wake restart because agent is not running")
++		return
++	}
++	s.mutex.Unlock()
++
++	barrier, ok := s.installWakeRouteBarrier()
++	if !ok {
++		log.Warn("skipping wake restart because route killswitch barrier is unavailable")
++		return
++	}
++	if barrier != nil {
++		s.setWakeRouteBarrier(barrier)
++	}
++
++	s.mutex.Lock()
++	if !s.clientRunning || s.actCancel == nil {
++		s.mutex.Unlock()
++		log.Info("skipping wake restart because agent stopped before restart")
++		s.clearWakeRouteBarrier()
++		return
++	}
++
++	giveUpChan := s.clientGiveUpChan
++	s.actCancel()
++	s.mutex.Unlock()
++
++	if giveUpChan != nil {
++		select {
++		case <-giveUpChan:
++			log.Debug("previous client goroutine stopped after wake restart request")
++		case <-time.After(wakeRestartStopTimeout):
++			log.Warn("timeout waiting for previous client goroutine during wake restart")
++		}
++	}
++
++	ctx, cancel := context.WithTimeout(s.rootCtx, wakeRestartUpTimeout)
++	defer cancel()
++
++	if _, err := s.Up(ctx, &proto.UpRequest{}); err != nil {
++		log.Errorf("wake restart failed, keeping route killswitch barrier active: %v", err)
++		return
++	}
++
++	log.Info("wake restart completed")
++}
++
++func (s *Server) setWakeRouteBarrier(barrier wakeRouteBarrier) {
++	s.wakeBarrierMu.Lock()
++	oldBarrier := s.wakeBarrier
++	s.wakeBarrier = barrier
++	s.wakeBarrierMu.Unlock()
++
++	if oldBarrier != nil {
++		oldBarrier.Close()
++	}
++}
++
++func (s *Server) clearWakeRouteBarrier() {
++	s.wakeBarrierMu.Lock()
++	barrier := s.wakeBarrier
++	s.wakeBarrier = nil
++	s.wakeBarrierMu.Unlock()
++
++	if barrier != nil {
++		barrier.Close()
++	}
++}
+diff --git a/client/server/sleep_barrier_darwin.go b/client/server/sleep_barrier_darwin.go
+new file mode 100644
+index 000000000..04266a42a
+--- /dev/null
++++ b/client/server/sleep_barrier_darwin.go
+@@ -0,0 +1,148 @@
++//go:build darwin && !ios
++
++package server
++
++import (
++	"fmt"
++	"net/netip"
++	"os"
++	"os/exec"
++	"strings"
++
++	log "github.com/sirupsen/logrus"
++)
++
++const (
++	wakeBarrierAnchor = "com.apple/netbird_awg_killswitch"
++	wakeBarrierTable  = "netbird_awg_kill"
++)
++
++type pfWakeRouteBarrier struct {
++	token string
++}
++
++func (s *Server) installWakeRouteBarrier() (wakeRouteBarrier, bool) {
++	prefixes := s.wakeBarrierPrefixes()
++	if len(prefixes) == 0 {
++		log.Debug("wake route killswitch barrier skipped: no resolved domain route IPs")
++		return nil, true
++	}
++
++	token, err := loadWakeBarrierPF(prefixes)
++	if err != nil {
++		log.Warnf("failed to install wake route killswitch barrier: %v", err)
++		return nil, false
++	}
++
++	log.Infof("installed wake route killswitch barrier for %d resolved domain route IP(s)", len(prefixes))
++	return &pfWakeRouteBarrier{token: token}, true
++}
++
++func (s *Server) wakeBarrierPrefixes() []netip.Prefix {
++	states := s.statusRecorder.GetResolvedDomainsStates()
++	seen := make(map[netip.Addr]struct{})
++	prefixes := make([]netip.Prefix, 0, len(states))
++
++	for _, state := range states {
++		for _, prefix := range state.Prefixes {
++			addr := prefix.Addr()
++			if !addr.IsValid() {
++				continue
++			}
++			if _, ok := seen[addr]; ok {
++				continue
++			}
++			seen[addr] = struct{}{}
++			if addr.Is4() {
++				prefixes = append(prefixes, netip.PrefixFrom(addr, 32))
++			} else {
++				prefixes = append(prefixes, netip.PrefixFrom(addr, 128))
++			}
++		}
++	}
++
++	return prefixes
++}
++
++func loadWakeBarrierPF(prefixes []netip.Prefix) (string, error) {
++	addrs := make([]string, 0, len(prefixes))
++	for _, prefix := range prefixes {
++		addrs = append(addrs, prefix.Addr().String())
++	}
++
++	rules := fmt.Sprintf("table <%s> persist { %s }\nblock drop out quick to <%s>\n",
++		wakeBarrierTable,
++		strings.Join(addrs, ", "),
++		wakeBarrierTable,
++	)
++
++	file, err := os.CreateTemp("", "netbird-awg-wake-pf-*.conf")
++	if err != nil {
++		return "", fmt.Errorf("create pf rules file: %w", err)
++	}
++	defer func() {
++		if err := os.Remove(file.Name()); err != nil {
++			log.Debugf("remove temporary pf rules file: %v", err)
++		}
++	}()
++
++	if _, err := file.WriteString(rules); err != nil {
++		_ = file.Close()
++		return "", fmt.Errorf("write pf rules file: %w", err)
++	}
++	if err := file.Close(); err != nil {
++		return "", fmt.Errorf("close pf rules file: %w", err)
++	}
++
++	if out, err := exec.Command("pfctl", "-a", wakeBarrierAnchor, "-f", file.Name()).CombinedOutput(); err != nil {
++		return "", fmt.Errorf("load pf anchor: %w: %s", err, strings.TrimSpace(string(out)))
++	}
++
++	token, err := enablePFForWakeBarrier()
++	if err != nil {
++		_ = flushWakeBarrierPF()
++		return "", err
++	}
++
++	return token, nil
++}
++
++func enablePFForWakeBarrier() (string, error) {
++	out, err := exec.Command("pfctl", "-E").CombinedOutput()
++	if err != nil {
++		return "", fmt.Errorf("enable pf: %w: %s", err, strings.TrimSpace(string(out)))
++	}
++
++	for _, line := range strings.Split(string(out), "\n") {
++		if !strings.Contains(line, "Token") {
++			continue
++		}
++		fields := strings.Fields(line)
++		if len(fields) > 0 {
++			return fields[len(fields)-1], nil
++		}
++	}
++
++	return "", nil
++}
++
++func (b *pfWakeRouteBarrier) Close() {
++	if err := flushWakeBarrierPF(); err != nil {
++		log.Warnf("failed to clear wake route killswitch barrier: %v", err)
++	}
++
++	if b.token == "" {
++		return
++	}
++
++	if out, err := exec.Command("pfctl", "-X", b.token).CombinedOutput(); err != nil {
++		log.Debugf("failed to release pf token for wake route killswitch barrier: %v: %s", err, strings.TrimSpace(string(out)))
++	}
++}
++
++func flushWakeBarrierPF() error {
++	if out, err := exec.Command("pfctl", "-a", wakeBarrierAnchor, "-F", "all").CombinedOutput(); err != nil {
++		return fmt.Errorf("flush pf anchor: %w: %s", err, strings.TrimSpace(string(out)))
++	}
++	return nil
++}
+diff --git a/client/server/sleep_barrier_other.go b/client/server/sleep_barrier_other.go
+new file mode 100644
+index 000000000..e381746bd
+--- /dev/null
++++ b/client/server/sleep_barrier_other.go
+@@ -0,0 +1,7 @@
++//go:build !darwin || ios
++
++package server
++
++func (s *Server) installWakeRouteBarrier() (wakeRouteBarrier, bool) {
++	return nil, true
++}
