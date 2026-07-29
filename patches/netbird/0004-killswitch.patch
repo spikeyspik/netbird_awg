@@ -169,7 +169,7 @@ index 8047006fe..c4989fe5c 100644
  
  // todo: handle potential race conditions
 diff --git a/client/server/sleep.go b/client/server/sleep.go
-index 877ad9690..9c475e9cf 100644
+index 877ad9690..b7d0153b7 100644
 --- a/client/server/sleep.go
 +++ b/client/server/sleep.go
 @@ -4,6 +4,7 @@ import (
@@ -196,7 +196,7 @@ index 877ad9690..9c475e9cf 100644
  // serverAgent adapts Server to the handler.Agent and handler.StatusChecker interfaces
  type serverAgent struct {
  	s *Server
-@@ -52,15 +62,10 @@ func (s *Server) startSleepDetector() {
+@@ -52,15 +62,11 @@ func (s *Server) startSleepDetector() {
  	err = svc.Register(func(event sleep.EventType) {
  		switch event {
  		case sleep.EventTypeSleep:
@@ -204,7 +204,8 @@ index 877ad9690..9c475e9cf 100644
 -			if err := s.sleepHandler.HandleSleep(s.rootCtx); err != nil {
 -				log.Errorf("failed to handle sleep event: %v", err)
 -			}
-+			log.Info("sleep event detected; keeping agent up to preserve routing")
++			log.Info("sleep event detected; installing route killswitch barrier and keeping agent up")
++			s.installSleepBarrierIfRunning()
  		case sleep.EventTypeWakeUp:
 -			log.Info("handling wakeup event")
 -			if err := s.sleepHandler.HandleWakeUp(s.rootCtx); err != nil {
@@ -215,27 +216,49 @@ index 877ad9690..9c475e9cf 100644
  		}
  	})
  	if err != nil {
-@@ -91,3 +96,75 @@ func sleepDetectorDisabled() bool {
+@@ -91,3 +97,97 @@ func sleepDetectorDisabled() bool {
  	}
  	return disabled
  }
++
++func (s *Server) installSleepBarrierIfRunning() {
++	s.mutex.Lock()
++	running := s.clientRunning && s.actCancel != nil
++	s.mutex.Unlock()
++	if !running {
++		log.Debug("sleep route killswitch barrier skipped because agent is not running")
++		return
++	}
++
++	if barrier, ok := s.installWakeRouteBarrier(); ok && barrier != nil {
++		s.setWakeRouteBarrier(barrier)
++	} else if !ok {
++		log.Warn("route killswitch barrier is unavailable during sleep transition")
++	}
++}
 +
 +func (s *Server) restartAfterWakeWithBarrier() {
 +	s.mutex.Lock()
 +	if !s.clientRunning || s.actCancel == nil {
 +		s.mutex.Unlock()
 +		log.Info("skipping wake restart because agent is not running")
++		s.clearWakeRouteBarrier()
 +		return
 +	}
 +	s.mutex.Unlock()
 +
-+	barrier, ok := s.installWakeRouteBarrier()
-+	if !ok {
-+		log.Warn("skipping wake restart because route killswitch barrier is unavailable")
-+		return
-+	}
-+	if barrier != nil {
-+		s.setWakeRouteBarrier(barrier)
++	s.wakeBarrierMu.Lock()
++	hasBarrier := s.wakeBarrier != nil
++	s.wakeBarrierMu.Unlock()
++	if !hasBarrier {
++		barrier, ok := s.installWakeRouteBarrier()
++		if !ok {
++			log.Warn("skipping wake restart because route killswitch barrier is unavailable")
++			return
++		}
++		if barrier != nil {
++			s.setWakeRouteBarrier(barrier)
++		}
 +	}
 +
 +	s.mutex.Lock()
@@ -293,10 +316,10 @@ index 877ad9690..9c475e9cf 100644
 +}
 diff --git a/client/server/sleep_barrier_darwin.go b/client/server/sleep_barrier_darwin.go
 new file mode 100644
-index 000000000..04266a42a
+index 000000000..f9fdd7fe5
 --- /dev/null
 +++ b/client/server/sleep_barrier_darwin.go
-@@ -0,0 +1,148 @@
+@@ -0,0 +1,155 @@
 +//go:build darwin && !ios
 +
 +package server
@@ -322,11 +345,6 @@ index 000000000..04266a42a
 +
 +func (s *Server) installWakeRouteBarrier() (wakeRouteBarrier, bool) {
 +	prefixes := s.wakeBarrierPrefixes()
-+	if len(prefixes) == 0 {
-+		log.Debug("wake route killswitch barrier skipped: no resolved domain route IPs")
-+		return nil, true
-+	}
-+
 +	token, err := loadWakeBarrierPF(prefixes)
 +	if err != nil {
 +		log.Warnf("failed to install wake route killswitch barrier: %v", err)
@@ -364,16 +382,7 @@ index 000000000..04266a42a
 +}
 +
 +func loadWakeBarrierPF(prefixes []netip.Prefix) (string, error) {
-+	addrs := make([]string, 0, len(prefixes))
-+	for _, prefix := range prefixes {
-+		addrs = append(addrs, prefix.Addr().String())
-+	}
-+
-+	rules := fmt.Sprintf("table <%s> persist { %s }\nblock drop out quick to <%s>\n",
-+		wakeBarrierTable,
-+		strings.Join(addrs, ", "),
-+		wakeBarrierTable,
-+	)
++	rules := buildWakeBarrierPFRules(prefixes)
 +
 +	file, err := os.CreateTemp("", "netbird-awg-wake-pf-*.conf")
 +	if err != nil {
@@ -404,6 +413,27 @@ index 000000000..04266a42a
 +	}
 +
 +	return token, nil
++}
++
++func buildWakeBarrierPFRules(prefixes []netip.Prefix) string {
++	var builder strings.Builder
++	addrs := make([]string, 0, len(prefixes))
++	for _, prefix := range prefixes {
++		addrs = append(addrs, prefix.Addr().String())
++	}
++
++	if len(addrs) > 0 {
++		_, _ = fmt.Fprintf(&builder, "table <%s> persist { %s }\n", wakeBarrierTable, strings.Join(addrs, ", "))
++		_, _ = fmt.Fprintf(&builder, "block drop out quick to <%s>\n", wakeBarrierTable)
++	}
++
++	// Block direct DNS while the agent is restarting. This covers classic DNS,
++	// DNS-over-TLS and DNS-over-QUIC. DoH over TCP/443 is indistinguishable from
++	// regular HTTPS at this layer and must be disabled by browser/MDM policy.
++	builder.WriteString("block drop out quick proto { tcp udp } to any port 53\n")
++	builder.WriteString("block drop out quick proto { tcp udp } to any port 853\n")
++	builder.WriteString("block drop out quick proto udp to any port 443\n")
++	return builder.String()
 +}
 +
 +func enablePFForWakeBarrier() (string, error) {
