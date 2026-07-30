@@ -3,7 +3,6 @@ From: spikeyspik <24636111+spikeyspik@users.noreply.github.com>
 Date: Mon, 27 Jul 2026 00:00:00 +0300
 Subject: [PATCH] client: killswitch
 
-
 diff --git a/client/internal/dns/local/local.go b/client/internal/dns/local/local.go
 index fef35fd41..655ab283b 100644
 --- a/client/internal/dns/local/local.go
@@ -128,7 +127,7 @@ index b784cc274..2b4022a7e 100644
  	peerAllowedIP, exists := d.peerStore.AllowedIP(peerKey)
  	if !exists {
 diff --git a/client/server/server.go b/client/server/server.go
-index 8047006fe..c4989fe5c 100644
+index 8047006fe..972b8a7ee 100644
 --- a/client/server/server.go
 +++ b/client/server/server.go
 @@ -116,7 +116,9 @@ type Server struct {
@@ -168,8 +167,19 @@ index 8047006fe..c4989fe5c 100644
  }
  
  // todo: handle potential race conditions
+@@ -1125,6 +1135,10 @@ func (s *Server) Down(ctx context.Context, _ *proto.DownRequest) (*proto.DownRes
+ 
+ func (s *Server) cleanupConnection() error {
+ 	s.oauthAuthFlow = oauthAuthFlow{}
++	s.clearWakeRouteBarrier()
++	if err := cleanupWakeRouteBarrierArtifacts(); err != nil {
++		log.Debugf("cleanup stale wake route killswitch barrier: %v", err)
++	}
+ 
+ 	if s.actCancel == nil {
+ 		return ErrServiceNotUp
 diff --git a/client/server/sleep.go b/client/server/sleep.go
-index 877ad9690..9c475e9cf 100644
+index 877ad9690..5566d16cf 100644
 --- a/client/server/sleep.go
 +++ b/client/server/sleep.go
 @@ -4,6 +4,7 @@ import (
@@ -196,7 +206,18 @@ index 877ad9690..9c475e9cf 100644
  // serverAgent adapts Server to the handler.Agent and handler.StatusChecker interfaces
  type serverAgent struct {
  	s *Server
-@@ -52,15 +62,10 @@ func (s *Server) startSleepDetector() {
+@@ -38,6 +48,10 @@ func (a *serverAgent) Status() (internal.StatusType, error) {
+ // logs a warning and returns. Setting NB_DISABLE_SLEEP_DETECTOR=true skips
+ // registration entirely.
+ func (s *Server) startSleepDetector() {
++	if err := cleanupWakeRouteBarrierArtifacts(); err != nil {
++		log.Debugf("cleanup stale wake route killswitch barrier: %v", err)
++	}
++
+ 	if sleepDetectorDisabled() {
+ 		log.Info("sleep detection disabled via " + envDisableSleepDetector)
+ 		return
+@@ -52,15 +66,10 @@ func (s *Server) startSleepDetector() {
  	err = svc.Register(func(event sleep.EventType) {
  		switch event {
  		case sleep.EventTypeSleep:
@@ -215,7 +236,7 @@ index 877ad9690..9c475e9cf 100644
  		}
  	})
  	if err != nil {
-@@ -91,3 +96,75 @@ func sleepDetectorDisabled() bool {
+@@ -91,3 +100,75 @@ func sleepDetectorDisabled() bool {
  	}
  	return disabled
  }
@@ -293,10 +314,10 @@ index 877ad9690..9c475e9cf 100644
 +}
 diff --git a/client/server/sleep_barrier_darwin.go b/client/server/sleep_barrier_darwin.go
 new file mode 100644
-index 000000000..04266a42a
+index 000000000..b4a0eda95
 --- /dev/null
 +++ b/client/server/sleep_barrier_darwin.go
-@@ -0,0 +1,148 @@
+@@ -0,0 +1,152 @@
 +//go:build darwin && !ios
 +
 +package server
@@ -445,16 +466,24 @@ index 000000000..04266a42a
 +	}
 +	return nil
 +}
++
++func cleanupWakeRouteBarrierArtifacts() error {
++	return flushWakeBarrierPF()
++}
 diff --git a/client/server/sleep_barrier_other.go b/client/server/sleep_barrier_other.go
 new file mode 100644
-index 000000000..e381746bd
+index 000000000..0f0691066
 --- /dev/null
 +++ b/client/server/sleep_barrier_other.go
-@@ -0,0 +1,7 @@
+@@ -0,0 +1,11 @@
 +//go:build !darwin || ios
 +
 +package server
 +
 +func (s *Server) installWakeRouteBarrier() (wakeRouteBarrier, bool) {
 +	return nil, true
++}
++
++func cleanupWakeRouteBarrierArtifacts() error {
++	return nil
 +}
