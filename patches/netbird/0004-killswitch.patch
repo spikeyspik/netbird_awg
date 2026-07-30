@@ -169,7 +169,7 @@ index 8047006fe..c4989fe5c 100644
  
  // todo: handle potential race conditions
 diff --git a/client/server/sleep.go b/client/server/sleep.go
-index 877ad9690..7015b0aaa 100644
+index 877ad9690..9c475e9cf 100644
 --- a/client/server/sleep.go
 +++ b/client/server/sleep.go
 @@ -4,6 +4,7 @@ import (
@@ -215,7 +215,7 @@ index 877ad9690..7015b0aaa 100644
  		}
  	})
  	if err != nil {
-@@ -91,3 +96,76 @@ func sleepDetectorDisabled() bool {
+@@ -91,3 +96,75 @@ func sleepDetectorDisabled() bool {
  	}
  	return disabled
  }
@@ -225,7 +225,6 @@ index 877ad9690..7015b0aaa 100644
 +	if !s.clientRunning || s.actCancel == nil {
 +		s.mutex.Unlock()
 +		log.Info("skipping wake restart because agent is not running")
-+		s.clearWakeRouteBarrier()
 +		return
 +	}
 +	s.mutex.Unlock()
@@ -294,10 +293,10 @@ index 877ad9690..7015b0aaa 100644
 +}
 diff --git a/client/server/sleep_barrier_darwin.go b/client/server/sleep_barrier_darwin.go
 new file mode 100644
-index 000000000..d421e4cd7
+index 000000000..04266a42a
 --- /dev/null
 +++ b/client/server/sleep_barrier_darwin.go
-@@ -0,0 +1,180 @@
+@@ -0,0 +1,148 @@
 +//go:build darwin && !ios
 +
 +package server
@@ -308,8 +307,6 @@ index 000000000..d421e4cd7
 +	"os"
 +	"os/exec"
 +	"strings"
-+	"sync"
-+	"time"
 +
 +	log "github.com/sirupsen/logrus"
 +)
@@ -317,13 +314,10 @@ index 000000000..d421e4cd7
 +const (
 +	wakeBarrierAnchor = "com.apple/netbird_awg_killswitch"
 +	wakeBarrierTable  = "netbird_awg_kill"
-+	wakeBarrierTTL    = 2 * time.Minute
 +)
 +
 +type pfWakeRouteBarrier struct {
 +	token string
-+	once  sync.Once
-+	timer *time.Timer
 +}
 +
 +func (s *Server) installWakeRouteBarrier() (wakeRouteBarrier, bool) {
@@ -340,7 +334,7 @@ index 000000000..d421e4cd7
 +	}
 +
 +	log.Infof("installed wake route killswitch barrier for %d resolved domain route IP(s)", len(prefixes))
-+	return newPFWakeRouteBarrier(token), true
++	return &pfWakeRouteBarrier{token: token}, true
 +}
 +
 +func (s *Server) wakeBarrierPrefixes() []netip.Prefix {
@@ -370,7 +364,16 @@ index 000000000..d421e4cd7
 +}
 +
 +func loadWakeBarrierPF(prefixes []netip.Prefix) (string, error) {
-+	rules := buildWakeBarrierPFRules(prefixes)
++	addrs := make([]string, 0, len(prefixes))
++	for _, prefix := range prefixes {
++		addrs = append(addrs, prefix.Addr().String())
++	}
++
++	rules := fmt.Sprintf("table <%s> persist { %s }\nblock drop out quick to <%s>\n",
++		wakeBarrierTable,
++		strings.Join(addrs, ", "),
++		wakeBarrierTable,
++	)
 +
 +	file, err := os.CreateTemp("", "netbird-awg-wake-pf-*.conf")
 +	if err != nil {
@@ -403,27 +406,6 @@ index 000000000..d421e4cd7
 +	return token, nil
 +}
 +
-+func buildWakeBarrierPFRules(prefixes []netip.Prefix) string {
-+	var builder strings.Builder
-+	addrs := make([]string, 0, len(prefixes))
-+	for _, prefix := range prefixes {
-+		addrs = append(addrs, prefix.Addr().String())
-+	}
-+
-+	if len(addrs) > 0 {
-+		_, _ = fmt.Fprintf(&builder, "table <%s> persist { %s }\n", wakeBarrierTable, strings.Join(addrs, ", "))
-+		_, _ = fmt.Fprintf(&builder, "block drop out quick to <%s>\n", wakeBarrierTable)
-+	}
-+
-+	// Block direct DNS only while the wake restart is in progress. This covers
-+	// classic DNS and DNS-over-TLS without blocking normal HTTPS. Browser DoH
-+	// over TCP/443 is indistinguishable from regular HTTPS here and must be
-+	// disabled by browser or MDM policy.
-+	builder.WriteString("block drop out quick proto { tcp udp } to any port 53\n")
-+	builder.WriteString("block drop out quick proto { tcp udp } to any port 853\n")
-+	return builder.String()
-+}
-+
 +func enablePFForWakeBarrier() (string, error) {
 +	out, err := exec.Command("pfctl", "-E").CombinedOutput()
 +	if err != nil {
@@ -443,33 +425,18 @@ index 000000000..d421e4cd7
 +	return "", nil
 +}
 +
-+func newPFWakeRouteBarrier(token string) *pfWakeRouteBarrier {
-+	barrier := &pfWakeRouteBarrier{token: token}
-+	barrier.timer = time.AfterFunc(wakeBarrierTTL, func() {
-+		log.Warnf("wake route killswitch barrier TTL %s expired; clearing barrier", wakeBarrierTTL)
-+		barrier.Close()
-+	})
-+	return barrier
-+}
-+
 +func (b *pfWakeRouteBarrier) Close() {
-+	b.once.Do(func() {
-+		if b.timer != nil {
-+			b.timer.Stop()
-+		}
++	if err := flushWakeBarrierPF(); err != nil {
++		log.Warnf("failed to clear wake route killswitch barrier: %v", err)
++	}
 +
-+		if err := flushWakeBarrierPF(); err != nil {
-+			log.Warnf("failed to clear wake route killswitch barrier: %v", err)
-+		}
++	if b.token == "" {
++		return
++	}
 +
-+		if b.token == "" {
-+			return
-+		}
-+
-+		if out, err := exec.Command("pfctl", "-X", b.token).CombinedOutput(); err != nil {
-+			log.Debugf("failed to release pf token for wake route killswitch barrier: %v: %s", err, strings.TrimSpace(string(out)))
-+		}
-+	})
++	if out, err := exec.Command("pfctl", "-X", b.token).CombinedOutput(); err != nil {
++		log.Debugf("failed to release pf token for wake route killswitch barrier: %v: %s", err, strings.TrimSpace(string(out)))
++	}
 +}
 +
 +func flushWakeBarrierPF() error {
