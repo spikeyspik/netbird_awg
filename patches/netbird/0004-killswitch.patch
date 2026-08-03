@@ -288,44 +288,45 @@ diff --git a/client/server/server.go b/client/server/server.go
 index db5909272..b08fc0a03 100644
 --- a/client/server/server.go
 +++ b/client/server/server.go
-@@ -122,7 +122,9 @@ type Server struct {
+@@ -122,7 +122,10 @@ type Server struct {
  	activeCapture    *capture.Session
  	networksDisabled bool
  
 -	sleepHandler *sleephandler.SleepHandler
 +	sleepHandler  *sleephandler.SleepHandler
 +	wakeBarrier   wakeRouteBarrier
++	wakeBarrierID uint64
 +	wakeBarrierMu sync.Mutex
  
  	// mdmTicker periodically re-reads the OS-native MDM policy and triggers
  	// an engine restart when the policy changes. Launched once by Start;
-@@ -865,7 +867,11 @@ func (s *Server) Up(callerCtx context.Context, msg *proto.UpRequest) (*proto.UpR
+@@ -865,7 +868,11 @@ func (s *Server) Up(callerCtx context.Context, msg *proto.UpRequest) (*proto.UpR
  		}
  		s.mutex.Unlock()
  
 -		return s.waitForUp(callerCtx)
 +		resp, err := s.waitForUp(callerCtx)
 +		if err == nil {
-+			s.clearWakeRouteBarrier()
++			s.scheduleWakeRouteBarrierClear()
 +		}
 +		return resp, err
  	}
  	if err := RestoreResidualState(callerCtx, s.profileManager.GetStatePath()); err != nil {
  		log.Warnf(errRestoreResidualState, err)
-@@ -966,7 +972,11 @@ func (s *Server) Up(callerCtx context.Context, msg *proto.UpRequest) (*proto.UpR
+@@ -966,7 +973,11 @@ func (s *Server) Up(callerCtx context.Context, msg *proto.UpRequest) (*proto.UpR
  	if msg.GetAsync() {
  		return &proto.UpResponse{}, nil
  	}
 -	return s.waitForUp(callerCtx)
 +	resp, err := s.waitForUp(callerCtx)
 +	if err == nil {
-+		s.clearWakeRouteBarrier()
++		s.scheduleWakeRouteBarrierClear()
 +	}
 +	return resp, err
  }
  
  // todo: handle potential race conditions
-@@ -1191,6 +1201,10 @@ func (s *Server) Down(ctx context.Context, _ *proto.DownRequest) (*proto.DownRes
+@@ -1191,6 +1202,10 @@ func (s *Server) Down(ctx context.Context, _ *proto.DownRequest) (*proto.DownRes
  
  func (s *Server) cleanupConnection() error {
  	s.oauthAuthFlow = oauthAuthFlow{}
@@ -336,11 +337,11 @@ index db5909272..b08fc0a03 100644
  
  	if s.actCancel == nil {
  		return ErrServiceNotUp
-@@ -2301,6 +2315,7 @@ func (s *Server) connect(ctx context.Context, config *profilemanager.Config, sta
+@@ -2301,6 +2316,7 @@ func (s *Server) connect(ctx context.Context, config *profilemanager.Config, sta
  	client := internal.NewConnectClient(ctx, config, statusRecorder)
  	client.SetUpdateManager(s.updateManager)
  	client.SetSyncResponsePersistence(s.persistSyncResponse)
-+	client.SetRestartHooks(s.protectEngineRestartWithBarrier, s.clearWakeRouteBarrier)
++	client.SetRestartHooks(s.protectEngineRestartWithBarrier, nil)
  
  	s.mutex.Lock()
  	s.connectClient = client
@@ -356,13 +357,14 @@ index 877ad9690..a94272c1d 100644
  
  	log "github.com/sirupsen/logrus"
  
-@@ -14,6 +15,15 @@ import (
+@@ -14,6 +15,16 @@ import (
  
  const envDisableSleepDetector = "NB_DISABLE_SLEEP_DETECTOR"
  
 +const (
 +	wakeRestartStopTimeout = 15 * time.Second
 +	wakeRestartUpTimeout   = 90 * time.Second
++	wakeBarrierClearDelay  = 15 * time.Second
 +)
 +
 +type wakeRouteBarrier interface {
@@ -372,7 +374,7 @@ index 877ad9690..a94272c1d 100644
  // serverAgent adapts Server to the handler.Agent and handler.StatusChecker interfaces
  type serverAgent struct {
  	s *Server
-@@ -38,6 +48,10 @@ func (a *serverAgent) Status() (internal.StatusType, error) {
+@@ -38,6 +49,10 @@ func (a *serverAgent) Status() (internal.StatusType, error) {
  // logs a warning and returns. Setting NB_DISABLE_SLEEP_DETECTOR=true skips
  // registration entirely.
  func (s *Server) startSleepDetector() {
@@ -383,7 +385,7 @@ index 877ad9690..a94272c1d 100644
  	if sleepDetectorDisabled() {
  		log.Info("sleep detection disabled via " + envDisableSleepDetector)
  		return
-@@ -52,15 +66,10 @@ func (s *Server) startSleepDetector() {
+@@ -52,15 +67,10 @@ func (s *Server) startSleepDetector() {
  	err = svc.Register(func(event sleep.EventType) {
  		switch event {
  		case sleep.EventTypeSleep:
@@ -402,7 +404,7 @@ index 877ad9690..a94272c1d 100644
  		}
  	})
  	if err != nil {
-@@ -91,3 +100,96 @@ func sleepDetectorDisabled() bool {
+@@ -91,3 +101,137 @@ func sleepDetectorDisabled() bool {
  	}
  	return disabled
  }
@@ -480,18 +482,59 @@ index 877ad9690..a94272c1d 100644
 +
 +func (s *Server) setWakeRouteBarrier(barrier wakeRouteBarrier) {
 +	s.wakeBarrierMu.Lock()
-+	oldBarrier := s.wakeBarrier
++	s.wakeBarrierID++
 +	s.wakeBarrier = barrier
 +	s.wakeBarrierMu.Unlock()
++}
 +
-+	if oldBarrier != nil {
-+		oldBarrier.Close()
++func (s *Server) scheduleWakeRouteBarrierClear() {
++	s.wakeBarrierMu.Lock()
++	barrierID := s.wakeBarrierID
++	hasBarrier := s.wakeBarrier != nil
++	s.wakeBarrierMu.Unlock()
++
++	if !hasBarrier {
++		return
 +	}
++
++	go func() {
++		timer := time.NewTimer(wakeBarrierClearDelay)
++		defer timer.Stop()
++
++		select {
++		case <-s.rootCtx.Done():
++			return
++		case <-timer.C:
++		}
++
++		s.clearWakeRouteBarrierIfCurrent(barrierID)
++	}()
 +}
 +
 +func (s *Server) clearWakeRouteBarrier() {
 +	s.wakeBarrierMu.Lock()
 +	barrier := s.wakeBarrier
++	if barrier != nil {
++		s.wakeBarrierID++
++	}
++	s.wakeBarrier = nil
++	s.wakeBarrierMu.Unlock()
++
++	if barrier != nil {
++		barrier.Close()
++	}
++}
++
++func (s *Server) clearWakeRouteBarrierIfCurrent(barrierID uint64) {
++	s.wakeBarrierMu.Lock()
++	if s.wakeBarrierID != barrierID {
++		s.wakeBarrierMu.Unlock()
++		return
++	}
++	barrier := s.wakeBarrier
++	if barrier != nil {
++		s.wakeBarrierID++
++	}
 +	s.wakeBarrier = nil
 +	s.wakeBarrierMu.Unlock()
 +
@@ -504,7 +547,7 @@ new file mode 100644
 index 000000000..bf36c5c84
 --- /dev/null
 +++ b/client/server/sleep_barrier_darwin.go
-@@ -0,0 +1,98 @@
+@@ -0,0 +1,111 @@
 +//go:build darwin && !ios
 +
 +package server
@@ -536,7 +579,7 @@ index 000000000..bf36c5c84
 +}
 +
 +func (s *Server) installWakeRouteBarrier() (wakeRouteBarrier, bool) {
-+	prefixes := resolvedRoutePrefixes(s.statusRecorder.GetResolvedDomainsStates())
++	prefixes := routeBarrierPrefixes(s.statusRecorder.GetResolvedDomainsStates(), s.statusRecorder.GetFullStatus().Peers)
 +	if len(prefixes) == 0 {
 +		return nil, true
 +	}
@@ -576,16 +619,29 @@ index 000000000..bf36c5c84
 +	return nil
 +}
 +
-+func resolvedRoutePrefixes(states map[domain.Domain]peer.ResolvedDomainInfo) []netip.Prefix {
++func routeBarrierPrefixes(states map[domain.Domain]peer.ResolvedDomainInfo, peers []peer.State) []netip.Prefix {
 +	prefixes := make([]netip.Prefix, 0)
 +	seen := make(map[netip.Prefix]struct{})
++	add := func(prefix netip.Prefix) {
++		if _, ok := seen[prefix]; ok {
++			return
++		}
++		seen[prefix] = struct{}{}
++		prefixes = append(prefixes, prefix)
++	}
++
 +	for _, info := range states {
 +		for _, prefix := range info.Prefixes {
-+			if _, ok := seen[prefix]; ok {
++			add(prefix)
++		}
++	}
++	for _, peerState := range peers {
++		for network := range peerState.GetRoutes() {
++			prefix, err := netip.ParsePrefix(network)
++			if err != nil {
 +				continue
 +			}
-+			seen[prefix] = struct{}{}
-+			prefixes = append(prefixes, prefix)
++			add(prefix)
 +		}
 +	}
 +	return prefixes
@@ -597,9 +653,9 @@ index 000000000..bf36c5c84
 +		items = append(items, prefix.String())
 +	}
 +
-+	return fmt.Sprintf("table <%s> persist { %s }\nblock drop out quick to <%s>\n",
++	return fmt.Sprintf("table <%s> persist {\n\t%s\n}\nblock drop out quick to <%s>\n",
 +		wakeBarrierTable,
-+		strings.Join(items, ", "),
++		strings.Join(items, ",\n\t"),
 +		wakeBarrierTable,
 +	)
 +}
