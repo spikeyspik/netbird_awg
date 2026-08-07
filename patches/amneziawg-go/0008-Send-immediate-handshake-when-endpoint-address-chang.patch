@@ -1,0 +1,118 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Zoltan Papp <zoltan.pmail@gmail.com>
+Date: Sun, 28 Jun 2026 12:29:22 +0200
+Subject: [PATCH] Send immediate handshake when endpoint address changes (#15)
+
+* device: send immediate handshake when endpoint address changes
+
+When a peer's endpoint is changed via UAPI to a new, non-nil address
+(e.g. an external signal learned a now-reachable address) while a
+handshake retry cycle is still mid-RekeyTimeout, force a handshake
+initiation right away instead of waiting out the remaining ~5s.
+
+* device: avoid throttle hack when initiating handshake on endpoint change
+
+Extract the initiation send into sendHandshakeInitiation() and have the
+endpoint-change path call it directly with a real lastSentHandshake
+timestamp, instead of back-dating lastSentHandshake to bypass the
+RekeyTimeout throttle.
+
+* device: only initiate handshake on endpoint change when no usable session
+
+Guard the endpoint-change handshake with needsHandshake() so an address
+change on a live, working session does not trigger an unnecessary rekey.
+---
+ device/send.go | 28 ++++++++++++++++++++++++++++
+ device/uapi.go | 18 +++++++++++++-----
+ 2 files changed, 41 insertions(+), 5 deletions(-)
+
+diff --git a/device/send.go b/device/send.go
+index 5c22d97..1538d3a 100644
+--- a/device/send.go
++++ b/device/send.go
+@@ -126,6 +126,12 @@ func (peer *Peer) SendHandshakeInitiation(isRetry bool) error {
+ 	peer.handshake.lastSentHandshake = time.Now()
+ 	peer.handshake.mutex.Unlock()
+ 
++	return peer.sendHandshakeInitiation()
++}
++
++// sendHandshakeInitiation transmits the initiation; the caller owns the
++// RekeyTimeout throttle and lastSentHandshake.
++func (peer *Peer) sendHandshakeInitiation() error {
+ 	peer.device.log.Verbosef("%v - Sending handshake initiation", peer)
+ 
+ 	msg, err := peer.device.CreateMessageInitiation(peer)
+@@ -178,6 +184,28 @@ func (peer *Peer) SendHandshakeInitiation(isRetry bool) error {
+ 	return err
+ }
+ 
++// needsHandshake reports whether the peer lacks a usable session, i.e. a new
++// handshake is required before traffic can flow.
++func (peer *Peer) needsHandshake() bool {
++	keypair := peer.keypairs.Current()
++	return keypair == nil ||
++		keypair.sendNonce.Load() >= RejectAfterMessages ||
++		time.Since(keypair.created) >= RejectAfterTime
++}
++
++// SendHandshakeInitiationOnEndpointChange starts a fresh handshake from the new
++// endpoint, skipping the RekeyTimeout throttle since any in-flight retry is
++// timed against the old address.
++func (peer *Peer) SendHandshakeInitiationOnEndpointChange() error {
++	peer.timers.handshakeAttempts.Store(0)
++
++	peer.handshake.mutex.Lock()
++	peer.handshake.lastSentHandshake = time.Now()
++	peer.handshake.mutex.Unlock()
++
++	return peer.sendHandshakeInitiation()
++}
++
+ func (peer *Peer) SendHandshakeResponse() error {
+ 	peer.handshake.mutex.Lock()
+ 	peer.handshake.lastSentHandshake = time.Now()
+diff --git a/device/uapi.go b/device/uapi.go
+index f28994c..e942dba 100644
+--- a/device/uapi.go
++++ b/device/uapi.go
+@@ -522,10 +522,11 @@ func (device *Device) handleDeviceLine(ipcDev *ipcSetDevice, key, value string)
+ 
+ // An ipcSetPeer is the current state of an IPC set operation on a peer.
+ type ipcSetPeer struct {
+-	*Peer        // Peer is the current peer being operated on
+-	dummy   bool // dummy reports whether this peer is a temporary, placeholder peer
+-	created bool // new reports whether this is a newly created peer
+-	pkaOn   bool // pkaOn reports whether the peer had the persistent keepalive turn on
++	*Peer                // Peer is the current peer being operated on
++	dummy           bool // dummy reports whether this peer is a temporary, placeholder peer
++	created         bool // new reports whether this is a newly created peer
++	pkaOn           bool // pkaOn reports whether the peer had the persistent keepalive turn on
++	endpointChanged bool // the endpoint address changed
+ }
+ 
+ func (peer *ipcSetPeer) handlePostConfig() {
+@@ -540,6 +541,9 @@ func (peer *ipcSetPeer) handlePostConfig() {
+ 		if peer.pkaOn {
+ 			peer.SendKeepalive()
+ 		}
++		if peer.endpointChanged && peer.needsHandshake() {
++			peer.SendHandshakeInitiationOnEndpointChange()
++		}
+ 		peer.SendStagedPackets()
+ 	}
+ }
+@@ -627,8 +631,12 @@ func (device *Device) handlePeerLine(
+ 			return ipcErrorf(ipc.IpcErrorInvalid, "failed to set endpoint %v: %w", value, err)
+ 		}
+ 		peer.endpoint.Lock()
+-		defer peer.endpoint.Unlock()
++		// Only an actual change of an existing endpoint triggers a handshake.
++		if peer.endpoint.val != nil && peer.endpoint.val.DstToString() != endpoint.DstToString() {
++			peer.endpointChanged = true
++		}
+ 		peer.endpoint.val = endpoint
++		peer.endpoint.Unlock()
+ 
+ 	case "persistent_keepalive_interval":
+ 		device.log.Verbosef("%v - UAPI: Updating persistent keepalive interval", peer.Peer)

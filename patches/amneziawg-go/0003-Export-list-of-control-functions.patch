@@ -1,0 +1,22 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Zoltan Papp <zoltan.pmail@gmail.com>
+Date: Fri, 22 Nov 2024 17:43:26 +0100
+Subject: [PATCH] Export list of control functions
+
+---
+ conn/export.go | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/conn/export.go b/conn/export.go
+index 8bc2bad..dd87373 100644
+--- a/conn/export.go
++++ b/conn/export.go
+@@ -9,4 +9,8 @@ var (
+ 	GetSrcFromControl      = getSrcFromControl
+ 
+ 	GetGSOSize = getGSOSize
++
++	// export controlFns for Android to use
++	// is not thread safe and should only be modified during init.
++	ControlFns = &controlFns
+ )

@@ -1,0 +1,58 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Viktor Liu <viktor@netbird.io>
+Date: Wed, 9 Jul 2025 11:50:34 +0200
+Subject: [PATCH] Add IPv6 support to receiver creator
+
+---
+ conn/bind_std.go         | 9 ++++++---
+ conn/receiver_creator.go | 9 +++++++--
+ 2 files changed, 13 insertions(+), 5 deletions(-)
+
+diff --git a/conn/bind_std.go b/conn/bind_std.go
+index f505954..80b20e3 100644
+--- a/conn/bind_std.go
++++ b/conn/bind_std.go
+@@ -188,8 +188,7 @@ again:
+ 			s.ipv4PC = v4pc
+ 		}
+ 		if s.receiverCreator != nil {
+-			// Todo: check if this still works
+-			fns = append(fns, s.receiverCreator.CreateIPv4ReceiverFn(v4pc, v4conn, s.ipv4RxOffload, &s.msgsPool))
++			fns = append(fns, s.receiverCreator.CreateReceiverFn(v4pc, v4conn, s.ipv4RxOffload, &s.msgsPool))
+ 		} else {
+ 			fns = append(fns, s.makeReceiveIPv4(v4pc, v4conn, s.ipv4RxOffload))
+ 		}
+@@ -201,7 +200,11 @@ again:
+ 			v6pc = ipv6.NewPacketConn(v6conn)
+ 			s.ipv6PC = v6pc
+ 		}
+-		fns = append(fns, s.makeReceiveIPv6(v6pc, v6conn, s.ipv6RxOffload))
++		if s.receiverCreator != nil {
++			fns = append(fns, s.receiverCreator.CreateReceiverFn(v6pc, v6conn, s.ipv6RxOffload, &s.msgsPool))
++		} else {
++			fns = append(fns, s.makeReceiveIPv6(v6pc, v6conn, s.ipv6RxOffload))
++		}
+ 		s.ipv6 = v6conn
+ 	}
+ 	if len(fns) == 0 {
+diff --git a/conn/receiver_creator.go b/conn/receiver_creator.go
+index 17dfa23..4d2935b 100644
+--- a/conn/receiver_creator.go
++++ b/conn/receiver_creator.go
+@@ -4,9 +4,14 @@ import (
+ 	"net"
+ 	"sync"
+ 
+-	"golang.org/x/net/ipv4"
++	"golang.org/x/net/ipv6"
+ )
+ 
++// PacketReader abstracts ipv4.PacketConn and ipv6.PacketConn which both implement ReadBatch
++type PacketReader interface {
++	ReadBatch([]ipv6.Message, int) (int, error)
++}
++
+ type ReceiverCreator interface {
+-	CreateIPv4ReceiverFn(pc *ipv4.PacketConn, conn *net.UDPConn, rxOffload bool, msgPool *sync.Pool) ReceiveFunc
++	CreateReceiverFn(pc PacketReader, conn *net.UDPConn, rxOffload bool, msgPool *sync.Pool) ReceiveFunc
+ }

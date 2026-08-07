@@ -62,7 +62,9 @@ apply_or_skip() {
 }
 
 apply_patches() {
-  apply_or_skip "$AWG_GO_DIR" "$PATCH_DIR/amneziawg-go.patch"
+  for i in "$PATCH_DIR/amneziawg-go/"*.patch; do
+    apply_or_skip "$AWG_GO_DIR" "$i"
+  done
   for i in "$PATCH_DIR/netbird/"*.patch; do
     apply_or_skip "$NETBIRD_DIR" "$i"
   done
@@ -93,13 +95,13 @@ regenerate_protos() {
 replace_imports() {
   while IFS= read -r rel; do
     local file="$NETBIRD_DIR/$rel"
-    perl -0pi -e 's#golang\.zx2c4\.com/wireguard/(?!wgctrl|windows)#github.com/amnezia-vpn/amneziawg-go/#g;' "$file"
+    perl -0pi -e 's#golang\.zx2c4\.com/wireguard/(?!wgctrl|windows)#github.com/amnezia-vpn/amneziawg-go/v3/#g;' "$file"
   done < <(git -C "$NETBIRD_DIR" ls-files '*.go' 'go.mod')
 
   pushd "$NETBIRD_DIR" >/dev/null
   go mod edit -dropreplace=golang.zx2c4.com/wireguard || true
   go mod edit -dropreplace=github.com/amnezia-vpn/amneziawg-go || true
-  go mod edit -replace=github.com/amnezia-vpn/amneziawg-go="$AWG_GO_DIR"
+  go mod edit -replace=github.com/amnezia-vpn/amneziawg-go/v3="$AWG_GO_DIR"
   go mod edit -require=github.com/cloudflare/circl@v1.3.3
   go mod edit -replace=github.com/cloudflare/circl=codeberg.org/cunicu/circl@v0.0.0-20230801113412-fec58fc7b5f6
   go mod tidy
