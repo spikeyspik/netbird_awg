@@ -1,0 +1,214 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Zolt=C3=A1n=20Papp?= <zoltan.pmail@gmail.com>
+Date: Wed, 30 Oct 2024 18:13:35 +0100
+Subject: [PATCH] Export offload flag for custom receiver
+
+---
+ conn/bind_std.go          |  6 +++---
+ conn/export.go            | 12 ++++++++++++
+ conn/receiver_creator.go  |  2 +-
+ conn/sticky_default.go    |  8 ++++----
+ conn/sticky_linux.go      |  8 ++++----
+ conn/sticky_linux_test.go | 18 +++++++++---------
+ 6 files changed, 33 insertions(+), 21 deletions(-)
+ create mode 100644 conn/export.go
+
+diff --git a/conn/bind_std.go b/conn/bind_std.go
+index 4704343..f505954 100644
+--- a/conn/bind_std.go
++++ b/conn/bind_std.go
+@@ -73,7 +73,7 @@ func NewStdNetBind() Bind {
+ 				msgs := make([]ipv6.Message, IdealBatchSize)
+ 				for i := range msgs {
+ 					msgs[i].Buffers = make(net.Buffers, 1)
+-					msgs[i].OOB = make([]byte, 0, StickyControlSize+gsoControlSize)
++					msgs[i].OOB = make([]byte, 0, stickyControlSize+gsoControlSize)
+ 				}
+ 				return &msgs
+ 			},
+@@ -189,7 +189,7 @@ again:
+ 		}
+ 		if s.receiverCreator != nil {
+ 			// Todo: check if this still works
+-			fns = append(fns, s.receiverCreator.CreateIPv4ReceiverFn(&s.msgsPool, v4pc, v4conn))
++			fns = append(fns, s.receiverCreator.CreateIPv4ReceiverFn(v4pc, v4conn, s.ipv4RxOffload, &s.msgsPool))
+ 		} else {
+ 			fns = append(fns, s.makeReceiveIPv4(v4pc, v4conn, s.ipv4RxOffload))
+ 		}
+@@ -284,7 +284,7 @@ func (s *StdNetBind) receiveIP(
+ 		}
+ 		addrPort := msg.Addr.(*net.UDPAddr).AddrPort()
+ 		ep := &StdNetEndpoint{AddrPort: addrPort} // TODO: remove allocation
+-		GetSrcFromControl(msg.OOB[:msg.NN], ep)
++		getSrcFromControl(msg.OOB[:msg.NN], ep)
+ 		eps[i] = ep
+ 	}
+ 	return numMsgs, nil
+diff --git a/conn/export.go b/conn/export.go
+new file mode 100644
+index 0000000..8bc2bad
+--- /dev/null
++++ b/conn/export.go
+@@ -0,0 +1,12 @@
++package conn
++
++const (
++	UdpSegmentMaxDatagrams = udpSegmentMaxDatagrams
++)
++
++var (
++	SplitCoalescedMessages = splitCoalescedMessages
++	GetSrcFromControl      = getSrcFromControl
++
++	GetGSOSize = getGSOSize
++)
+diff --git a/conn/receiver_creator.go b/conn/receiver_creator.go
+index fd99148..17dfa23 100644
+--- a/conn/receiver_creator.go
++++ b/conn/receiver_creator.go
+@@ -8,5 +8,5 @@ import (
+ )
+ 
+ type ReceiverCreator interface {
+-	CreateIPv4ReceiverFn(msgPool *sync.Pool, pc *ipv4.PacketConn, conn *net.UDPConn) ReceiveFunc
++	CreateIPv4ReceiverFn(pc *ipv4.PacketConn, conn *net.UDPConn, rxOffload bool, msgPool *sync.Pool) ReceiveFunc
+ }
+diff --git a/conn/sticky_default.go b/conn/sticky_default.go
+index 450c9cd..15b65af 100644
+--- a/conn/sticky_default.go
++++ b/conn/sticky_default.go
+@@ -25,9 +25,9 @@ func (e *StdNetEndpoint) SrcToString() string {
+ // {get,set}srcControl feature set, but use alternatively named flags and need
+ // ports and require testing.
+ 
+-// GetSrcFromControl parses the control for PKTINFO and if found updates ep with
++// getSrcFromControl parses the control for PKTINFO and if found updates ep with
+ // the source information found.
+-func GetSrcFromControl(control []byte, ep *StdNetEndpoint) {
++func getSrcFromControl(control []byte, ep *StdNetEndpoint) {
+ }
+ 
+ // setSrcControl parses the control for PKTINFO and if found updates ep with
+@@ -35,8 +35,8 @@ func GetSrcFromControl(control []byte, ep *StdNetEndpoint) {
+ func setSrcControl(control *[]byte, ep *StdNetEndpoint) {
+ }
+ 
+-// StickyControlSize returns the recommended buffer size for pooling sticky
++// stickyControlSize returns the recommended buffer size for pooling sticky
+ // offloading control data.
+-const StickyControlSize = 0
++const stickyControlSize = 0
+ 
+ const StdNetSupportsStickySockets = false
+diff --git a/conn/sticky_linux.go b/conn/sticky_linux.go
+index bd142ca..adfedc1 100644
+--- a/conn/sticky_linux.go
++++ b/conn/sticky_linux.go
+@@ -45,9 +45,9 @@ func (e *StdNetEndpoint) SrcToString() string {
+ 	return e.SrcIP().String()
+ }
+ 
+-// GetSrcFromControl parses the control for PKTINFO and if found updates ep with
++// getSrcFromControl parses the control for PKTINFO and if found updates ep with
+ // the source information found.
+-func GetSrcFromControl(control []byte, ep *StdNetEndpoint) {
++func getSrcFromControl(control []byte, ep *StdNetEndpoint) {
+ 	ep.ClearSrc()
+ 
+ 	var (
+@@ -105,8 +105,8 @@ func setSrcControl(control *[]byte, ep *StdNetEndpoint) {
+ 	*control = append(*control, ep.src...)
+ }
+ 
+-// StickyControlSize returns the recommended buffer size for pooling sticky
++// stickyControlSize returns the recommended buffer size for pooling sticky
+ // offloading control data.
+-var StickyControlSize = unix.CmsgSpace(unix.SizeofInet6Pktinfo)
++var stickyControlSize = unix.CmsgSpace(unix.SizeofInet6Pktinfo)
+ 
+ const StdNetSupportsStickySockets = true
+diff --git a/conn/sticky_linux_test.go b/conn/sticky_linux_test.go
+index 6fa3873..1b1ee68 100644
+--- a/conn/sticky_linux_test.go
++++ b/conn/sticky_linux_test.go
+@@ -60,7 +60,7 @@ func Test_setSrcControl(t *testing.T) {
+ 		}
+ 		setSrc(ep, netip.MustParseAddr("127.0.0.1"), 5)
+ 
+-		control := make([]byte, StickyControlSize)
++		control := make([]byte, stickyControlSize)
+ 
+ 		setSrcControl(&control, ep)
+ 
+@@ -89,7 +89,7 @@ func Test_setSrcControl(t *testing.T) {
+ 		}
+ 		setSrc(ep, netip.MustParseAddr("::1"), 5)
+ 
+-		control := make([]byte, StickyControlSize)
++		control := make([]byte, stickyControlSize)
+ 
+ 		setSrcControl(&control, ep)
+ 
+@@ -113,7 +113,7 @@ func Test_setSrcControl(t *testing.T) {
+ 	})
+ 
+ 	t.Run("ClearOnNoSrc", func(t *testing.T) {
+-		control := make([]byte, StickyControlSize)
++		control := make([]byte, stickyControlSize)
+ 		hdr := (*unix.Cmsghdr)(unsafe.Pointer(&control[0]))
+ 		hdr.Level = 1
+ 		hdr.Type = 2
+@@ -129,7 +129,7 @@ func Test_setSrcControl(t *testing.T) {
+ 
+ func Test_getSrcFromControl(t *testing.T) {
+ 	t.Run("IPv4", func(t *testing.T) {
+-		control := make([]byte, StickyControlSize)
++		control := make([]byte, stickyControlSize)
+ 		hdr := (*unix.Cmsghdr)(unsafe.Pointer(&control[0]))
+ 		hdr.Level = unix.IPPROTO_IP
+ 		hdr.Type = unix.IP_PKTINFO
+@@ -139,7 +139,7 @@ func Test_getSrcFromControl(t *testing.T) {
+ 		info.Ifindex = 5
+ 
+ 		ep := &StdNetEndpoint{}
+-		GetSrcFromControl(control, ep)
++		getSrcFromControl(control, ep)
+ 
+ 		if ep.SrcIP() != netip.MustParseAddr("127.0.0.1") {
+ 			t.Errorf("unexpected address: %v", ep.SrcIP())
+@@ -149,7 +149,7 @@ func Test_getSrcFromControl(t *testing.T) {
+ 		}
+ 	})
+ 	t.Run("IPv6", func(t *testing.T) {
+-		control := make([]byte, StickyControlSize)
++		control := make([]byte, stickyControlSize)
+ 		hdr := (*unix.Cmsghdr)(unsafe.Pointer(&control[0]))
+ 		hdr.Level = unix.IPPROTO_IPV6
+ 		hdr.Type = unix.IPV6_PKTINFO
+@@ -159,7 +159,7 @@ func Test_getSrcFromControl(t *testing.T) {
+ 		info.Ifindex = 5
+ 
+ 		ep := &StdNetEndpoint{}
+-		GetSrcFromControl(control, ep)
++		getSrcFromControl(control, ep)
+ 
+ 		if ep.SrcIP() != netip.MustParseAddr("::1") {
+ 			t.Errorf("unexpected address: %v", ep.SrcIP())
+@@ -173,7 +173,7 @@ func Test_getSrcFromControl(t *testing.T) {
+ 		ep := &StdNetEndpoint{}
+ 		setSrc(ep, netip.MustParseAddr("::1"), 5)
+ 
+-		GetSrcFromControl(control, ep)
++		getSrcFromControl(control, ep)
+ 		if ep.SrcIP().IsValid() {
+ 			t.Errorf("unexpected address: %v", ep.SrcIP())
+ 		}
+@@ -200,7 +200,7 @@ func Test_getSrcFromControl(t *testing.T) {
+ 		combined = append(combined, control...)
+ 
+ 		ep := &StdNetEndpoint{}
+-		GetSrcFromControl(combined, ep)
++		getSrcFromControl(combined, ep)
+ 
+ 		if ep.SrcIP() != netip.MustParseAddr("127.0.0.1") {
+ 			t.Errorf("unexpected address: %v", ep.SrcIP())

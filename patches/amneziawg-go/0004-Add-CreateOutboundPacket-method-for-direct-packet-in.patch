@@ -1,0 +1,51 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Viktor Liu <viktor@netbird.io>
+Date: Sat, 28 Dec 2024 21:01:53 +0100
+Subject: [PATCH] Add CreateOutboundPacket method for direct packet injection
+
+---
+ device/device.go | 27 +++++++++++++++++++++++++++
+ 1 file changed, 27 insertions(+)
+
+diff --git a/device/device.go b/device/device.go
+index 26c8ede..36ffad1 100644
+--- a/device/device.go
++++ b/device/device.go
+@@ -6,6 +6,9 @@
+ package device
+ 
+ import (
++	"errors"
++	"fmt"
++	"net"
+ 	"runtime"
+ 	"sync"
+ 	"sync/atomic"
+@@ -585,3 +588,27 @@ func (device *Device) BindClose() error {
+ 	device.net.Unlock()
+ 	return err
+ }
++
++// CreateOutboundPacket creates and routes a packet to the appropriate peer
++func (device *Device) CreateOutboundPacket(payload []byte, dstIP net.IP) error {
++	peer := device.allowedips.Lookup(dstIP)
++	if peer == nil {
++		return fmt.Errorf("no peer found for IP %v", dstIP)
++	}
++	if !peer.isRunning.Load() {
++		return errors.New("peer not running")
++	}
++
++	elem := device.GetOutboundElement()
++	elem.buffer = device.GetMessageBuffer()
++
++	copy(elem.buffer[MessageTransportOffsetContent:], payload)
++	elem.packet = elem.buffer[MessageTransportOffsetContent : MessageTransportOffsetContent+len(payload)]
++
++	container := device.GetOutboundElementsContainer()
++	container.elems = append(container.elems, elem)
++
++	peer.StagePackets(container)
++	peer.SendStagedPackets()
++	return nil
++}

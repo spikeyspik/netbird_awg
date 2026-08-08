@@ -1,103 +1,23 @@
-diff --git a/conn/bind_std.go b/conn/bind_std.go
-index 6908ba8..80b20e3 100644
---- a/conn/bind_std.go
-+++ b/conn/bind_std.go
-@@ -46,6 +46,14 @@ type StdNetBind struct {
- 
- 	blackhole4 bool
- 	blackhole6 bool
-+
-+	receiverCreator ReceiverCreator
-+}
-+
-+func NewStdNetBindWithReceiverCreator(receiverCreator ReceiverCreator) *StdNetBind {
-+	b, _ := NewStdNetBind().(*StdNetBind)
-+	b.receiverCreator = receiverCreator
-+	return b
- }
- 
- func NewStdNetBind() Bind {
-@@ -179,7 +187,11 @@ again:
- 			v4pc = ipv4.NewPacketConn(v4conn)
- 			s.ipv4PC = v4pc
- 		}
--		fns = append(fns, s.makeReceiveIPv4(v4pc, v4conn, s.ipv4RxOffload))
-+		if s.receiverCreator != nil {
-+			fns = append(fns, s.receiverCreator.CreateReceiverFn(v4pc, v4conn, s.ipv4RxOffload, &s.msgsPool))
-+		} else {
-+			fns = append(fns, s.makeReceiveIPv4(v4pc, v4conn, s.ipv4RxOffload))
-+		}
- 		s.ipv4 = v4conn
- 	}
- 	if v6conn != nil {
-@@ -188,7 +200,11 @@ again:
- 			v6pc = ipv6.NewPacketConn(v6conn)
- 			s.ipv6PC = v6pc
- 		}
--		fns = append(fns, s.makeReceiveIPv6(v6pc, v6conn, s.ipv6RxOffload))
-+		if s.receiverCreator != nil {
-+			fns = append(fns, s.receiverCreator.CreateReceiverFn(v6pc, v6conn, s.ipv6RxOffload, &s.msgsPool))
-+		} else {
-+			fns = append(fns, s.makeReceiveIPv6(v6pc, v6conn, s.ipv6RxOffload))
-+		}
- 		s.ipv6 = v6conn
- 	}
- 	if len(fns) == 0 {
-diff --git a/conn/export.go b/conn/export.go
-new file mode 100644
-index 0000000..9c905cb
---- /dev/null
-+++ b/conn/export.go
-@@ -0,0 +1,18 @@
-+package conn
-+
-+const (
-+	UdpSegmentMaxDatagrams = udpSegmentMaxDatagrams
-+)
-+
-+var (
-+	SplitCoalescedMessages = splitCoalescedMessages
-+	GetSrcFromControl      = getSrcFromControl
-+
-+	GetGSOSize = getGSOSize
-+
-+	// export controlFns for Android to use
-+	// is not thread safe and should only be modified during init.
-+	ControlFns = &controlFns
-+)
-+
-+type BatchReader = batchReader
-diff --git a/conn/receiver_creator.go b/conn/receiver_creator.go
-new file mode 100644
-index 0000000..6fef567
---- /dev/null
-+++ b/conn/receiver_creator.go
-@@ -0,0 +1,10 @@
-+package conn
-+
-+import (
-+	"net"
-+	"sync"
-+)
-+
-+type ReceiverCreator interface {
-+	CreateReceiverFn(pc BatchReader, conn *net.UDPConn, rxOffload bool, msgPool *sync.Pool) ReceiveFunc
-+}
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Viktor Liu <17948409+lixmal@users.noreply.github.com>
+Date: Sat, 23 May 2026 17:53:12 +0900
+Subject: [PATCH] Make PreallocatedBuffersPerPool runtime-configurable (#14)
+
+---
+ device/device.go                 | 34 ++++++++++++++++++++++++--
+ device/pool_size.go              | 41 ++++++++++++++++++++++++++++++++
+ device/pools.go                  | 32 ++++++++++++++++++-------
+ device/queueconstants_android.go | 15 +++++++-----
+ device/queueconstants_default.go | 16 ++++++++-----
+ device/queueconstants_windows.go | 16 ++++++++-----
+ 6 files changed, 125 insertions(+), 29 deletions(-)
+ create mode 100644 device/pool_size.go
+
 diff --git a/device/device.go b/device/device.go
-index 2fdf85c..fe981b6 100644
+index 36ffad1..364b920 100644
 --- a/device/device.go
 +++ b/device/device.go
-@@ -6,6 +6,9 @@
- package device
- 
- import (
-+	"errors"
-+	"fmt"
-+	"net"
- 	"runtime"
- 	"sync"
- 	"sync/atomic"
-@@ -90,6 +93,12 @@ type Device struct {
+@@ -93,6 +93,12 @@ type Device struct {
  	closed   chan struct{}
  	log      *Logger
  
@@ -108,20 +28,24 @@ index 2fdf85c..fe981b6 100644
 +	batchSizeOverride atomic.Int32
 +
  	junk struct {
- 		min   int
- 		max   int
-@@ -326,6 +335,10 @@ func NewDevice(tunDevice tun.Device, bind conn.Bind, logger *Logger) *Device {
- 	device.headers.cookie = &magicHeader{start: MessageCookieReplyType, end: MessageCookieReplyType}
- 	device.headers.transport = &magicHeader{start: MessageTransportType, end: MessageTransportType}
+ 		min   atomic.Uint32
+ 		max   atomic.Uint32
+@@ -341,6 +347,14 @@ func NewDevice(tunDevice tun.Device, bind conn.Bind, logger *Logger) *Device {
+ 	device.rate.limiter.Init()
+ 	device.indexTable.Init()
  
 +	if MaxBatchSizeOverride > 0 {
 +		device.batchSizeOverride.Store(int32(MaxBatchSizeOverride))
 +	}
 +
- 	device.PopulatePools()
- 
- 	// create queues
-@@ -356,8 +369,12 @@ func NewDevice(tunDevice tun.Device, bind conn.Bind, logger *Logger) *Device {
++	if MaxBatchSizeOverride > 0 {
++		device.batchSizeOverride.Store(int32(MaxBatchSizeOverride))
++	}
++
+ 	rang.FromUint32(MessageInitiationType, MessageInitiationType)
+ 	device.headers.init.Store(rang)
+ 	rang.FromUint32(MessageResponseType, MessageResponseType)
+@@ -380,8 +394,12 @@ func NewDevice(tunDevice tun.Device, bind conn.Bind, logger *Logger) *Device {
  // BatchSize returns the BatchSize for the device as a whole which is the max of
  // the bind batch size and the tun batch size. The batch size reported by device
  // is the size used to construct memory pools, and is the allowed batch size for
@@ -135,7 +59,7 @@ index 2fdf85c..fe981b6 100644
  	size := device.net.bind.BatchSize()
  	dSize := device.tun.device.BatchSize()
  	if size < dSize {
-@@ -366,6 +383,18 @@ func (device *Device) BatchSize() int {
+@@ -390,6 +408,18 @@ func (device *Device) BatchSize() int {
  	return size
  }
  
@@ -154,7 +78,7 @@ index 2fdf85c..fe981b6 100644
  func (device *Device) LookupPeer(pk NoisePublicKey) *Peer {
  	device.peers.RLock()
  	defer device.peers.RUnlock()
-@@ -547,7 +576,7 @@ func (device *Device) BindUpdate() error {
+@@ -573,7 +603,7 @@ func (device *Device) BindUpdate() error {
  	device.net.stopping.Add(len(recvFns))
  	device.queue.decryption.wg.Add(len(recvFns)) // each RoutineReceiveIncoming goroutine writes to device.queue.decryption
  	device.queue.handshake.wg.Add(len(recvFns))  // each RoutineReceiveIncoming goroutine writes to device.queue.handshake
@@ -163,34 +87,6 @@ index 2fdf85c..fe981b6 100644
  	for _, fn := range recvFns {
  		go device.RoutineReceiveIncoming(batchSize, fn)
  	}
-@@ -562,3 +591,27 @@ func (device *Device) BindClose() error {
- 	device.net.Unlock()
- 	return err
- }
-+
-+// CreateOutboundPacket creates and routes a packet to the appropriate peer
-+func (device *Device) CreateOutboundPacket(payload []byte, dstIP net.IP) error {
-+	peer := device.allowedips.Lookup(dstIP)
-+	if peer == nil {
-+		return fmt.Errorf("no peer found for IP %v", dstIP)
-+	}
-+	if !peer.isRunning.Load() {
-+		return errors.New("peer not running")
-+	}
-+
-+	elem := device.GetOutboundElement()
-+	elem.buffer = device.GetMessageBuffer()
-+
-+	copy(elem.buffer[MessageTransportOffsetContent:], payload)
-+	elem.packet = elem.buffer[MessageTransportOffsetContent : MessageTransportOffsetContent+len(payload)]
-+
-+	container := device.GetOutboundElementsContainer()
-+	container.elems = append(container.elems, elem)
-+
-+	peer.StagePackets(container)
-+	peer.SendStagedPackets()
-+	return nil
-+}
 diff --git a/device/pool_size.go b/device/pool_size.go
 new file mode 100644
 index 0000000..3a6bc16
@@ -305,10 +201,10 @@ index 2c18f41..179f83d 100644
  	device.pool.inboundElementsContainer = NewWaitPool(PreallocatedBuffersPerPool, func() any {
  		s := make([]*QueueInboundElement, 0, device.BatchSize())
 diff --git a/device/queueconstants_android.go b/device/queueconstants_android.go
-index 741fcf3..bafb7f6 100644
+index 88662c2..c525b5f 100644
 --- a/device/queueconstants_android.go
 +++ b/device/queueconstants_android.go
-@@ -10,10 +10,13 @@ import "github.com/amnezia-vpn/amneziawg-go/conn"
+@@ -10,10 +10,13 @@ import "github.com/amnezia-vpn/amneziawg-go/v3/conn"
  /* Reduce memory consumption for Android */
  
  const (
@@ -329,11 +225,11 @@ index 741fcf3..bafb7f6 100644
 +// pool. Use SetPreallocatedBuffersPerPool to change this before calling NewDevice.
 +var PreallocatedBuffersPerPool uint32 = 4096
 diff --git a/device/queueconstants_default.go b/device/queueconstants_default.go
-index f19e9b1..bc44d0a 100644
+index 80d3117..4890162 100644
 --- a/device/queueconstants_default.go
 +++ b/device/queueconstants_default.go
 @@ -10,10 +10,14 @@ package device
- import "github.com/amnezia-vpn/amneziawg-go/conn"
+ import "github.com/amnezia-vpn/amneziawg-go/v3/conn"
  
  const (
 -	QueueStagedSize            = conn.IdealBatchSize
@@ -354,7 +250,7 @@ index f19e9b1..bc44d0a 100644
 +// Use SetPreallocatedBuffersPerPool to change this before calling NewDevice.
 +var PreallocatedBuffersPerPool uint32 = 0
 diff --git a/device/queueconstants_windows.go b/device/queueconstants_windows.go
-index 9a296d6..3a7f92c 100644
+index 425b2ea..3a7f92c 100644
 --- a/device/queueconstants_windows.go
 +++ b/device/queueconstants_windows.go
 @@ -6,10 +6,14 @@
@@ -365,8 +261,8 @@ index 9a296d6..3a7f92c 100644
 -	QueueOutboundSize          = 1024
 -	QueueInboundSize           = 1024
 -	QueueHandshakeSize         = 1024
--	MaxSegmentSize             = 2048 - 32 // largest possible UDP datagram
--	PreallocatedBuffersPerPool = 0         // Disable and allow for infinite memory growth
+-	MaxSegmentSize             = 65535 // Match with WINTUN_MAX_IP_PACKET_SIZE macro definition
+-	PreallocatedBuffersPerPool = 0     // Disable and allow for infinite memory growth
 +	QueueStagedSize    = 128
 +	QueueOutboundSize  = 1024
 +	QueueInboundSize   = 1024

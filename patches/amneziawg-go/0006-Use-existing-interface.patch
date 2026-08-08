@@ -1,0 +1,41 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Viktor Liu <viktor@netbird.io>
+Date: Wed, 9 Jul 2025 12:18:33 +0200
+Subject: [PATCH] Use existing interface
+
+---
+ conn/export.go           | 2 ++
+ conn/receiver_creator.go | 9 +--------
+ 2 files changed, 3 insertions(+), 8 deletions(-)
+
+diff --git a/conn/export.go b/conn/export.go
+index dd87373..9c905cb 100644
+--- a/conn/export.go
++++ b/conn/export.go
+@@ -14,3 +14,5 @@ var (
+ 	// is not thread safe and should only be modified during init.
+ 	ControlFns = &controlFns
+ )
++
++type BatchReader = batchReader
+diff --git a/conn/receiver_creator.go b/conn/receiver_creator.go
+index 4d2935b..6fef567 100644
+--- a/conn/receiver_creator.go
++++ b/conn/receiver_creator.go
+@@ -3,15 +3,8 @@ package conn
+ import (
+ 	"net"
+ 	"sync"
+-
+-	"golang.org/x/net/ipv6"
+ )
+ 
+-// PacketReader abstracts ipv4.PacketConn and ipv6.PacketConn which both implement ReadBatch
+-type PacketReader interface {
+-	ReadBatch([]ipv6.Message, int) (int, error)
+-}
+-
+ type ReceiverCreator interface {
+-	CreateReceiverFn(pc PacketReader, conn *net.UDPConn, rxOffload bool, msgPool *sync.Pool) ReceiveFunc
++	CreateReceiverFn(pc BatchReader, conn *net.UDPConn, rxOffload bool, msgPool *sync.Pool) ReceiveFunc
+ }

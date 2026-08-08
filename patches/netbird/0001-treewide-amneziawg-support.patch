@@ -1,15 +1,9 @@
-From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
-From: K900 <me@0upti.me>
-Date: Sun, 17 May 2026 15:07:22 +0300
-Subject: [PATCH] treewide: amneziawg support
-
-
 diff --git a/client/iface/configurer/amnezia_config.go b/client/iface/configurer/amnezia_config.go
 new file mode 100644
-index 000000000..8ad4f7224
+index 000000000..dc9243ca7
 --- /dev/null
 +++ b/client/iface/configurer/amnezia_config.go
-@@ -0,0 +1,21 @@
+@@ -0,0 +1,30 @@
 +package configurer
 +
 +// AmneziaConfig describes AmneziaWG obfuscation parameters.
@@ -21,24 +15,35 @@ index 000000000..8ad4f7224
 +	GetJmax() int32
 +	GetS1() int32
 +	GetS2() int32
-+	GetH1() uint32
-+	GetH2() uint32
-+	GetH3() uint32
-+	GetH4() uint32
++	GetS3() uint32
++	GetS4() uint32
++	GetH1() (uint32, uint32)
++	GetH2() (uint32, uint32)
++	GetH3() (uint32, uint32)
++	GetH4() (uint32, uint32)
 +	GetI1() string
 +	GetI2() string
 +	GetI3() string
 +	GetI4() string
 +	GetI5() string
++	GetRekeyAfterTime() (uint32, uint32)
++	GetRekeyTimeout() (uint32, uint32)
++	GetRejectAfterTime() (uint32, uint32)
++	GetKeepaliveTimeout() (uint32, uint32)
++	GetMaxHandshakeAttempts() (uint32, uint32)
++	GetContentPaddingAddition() (uint32, uint32)
++	GetHeaderProtectionKey() [32]byte
 +}
 diff --git a/client/iface/configurer/usp.go b/client/iface/configurer/usp.go
-index 0a25c55bc..04666df4a 100644
+index 0a25c55bc..d1d89fe51 100644
 --- a/client/iface/configurer/usp.go
 +++ b/client/iface/configurer/usp.go
-@@ -43,24 +43,27 @@ type WGUSPConfigurer struct {
+@@ -42,25 +42,28 @@ type WGUSPConfigurer struct {
+ 	activityRecorder *bind.ActivityRecorder
  	statsCache       *statsCache
  
- 	uapiListener net.Listener
+-	uapiListener net.Listener
++	uapiListener  net.Listener
 +	amneziaConfig AmneziaConfig
  }
  
@@ -156,7 +161,7 @@ index 0a25c55bc..04666df4a 100644
  	}
  
  	if wgCfg.ListenPort != nil {
-@@ -481,6 +490,53 @@ func toWgUserspaceString(wgCfg wgtypes.Config) string {
+@@ -481,6 +490,109 @@ func toWgUserspaceString(wgCfg wgtypes.Config) string {
  	return sb.String()
  }
  
@@ -177,17 +182,35 @@ index 0a25c55bc..04666df4a 100644
 +	if val := conf.GetS2(); val > 0 {
 +		sb.WriteString(fmt.Sprintf("s2=%d\n", val))
 +	}
-+	if val := conf.GetH1(); val > 0 {
-+		sb.WriteString(fmt.Sprintf("h1=%d\n", val))
++	if val := conf.GetS3(); val > 0 {
++		sb.WriteString(fmt.Sprintf("s3=%d\n", val))
 +	}
-+	if val := conf.GetH2(); val > 0 {
-+		sb.WriteString(fmt.Sprintf("h2=%d\n", val))
++	if val := conf.GetS4(); val > 0 {
++		sb.WriteString(fmt.Sprintf("s4=%d\n", val))
 +	}
-+	if val := conf.GetH3(); val > 0 {
-+		sb.WriteString(fmt.Sprintf("h3=%d\n", val))
++	if min, max := conf.GetH1(); min > 0 {
++		if max == 0 {
++			max = min
++		}
++		sb.WriteString(fmt.Sprintf("h1=%d-%d\n", min, max))
 +	}
-+	if val := conf.GetH4(); val > 0 {
-+		sb.WriteString(fmt.Sprintf("h4=%d\n", val))
++	if min, max := conf.GetH2(); min > 0 {
++		if max == 0 {
++			max = min
++		}
++		sb.WriteString(fmt.Sprintf("h2=%d-%d\n", min, max))
++	}
++	if min, max := conf.GetH3(); min > 0 {
++		if max == 0 {
++			max = min
++		}
++		sb.WriteString(fmt.Sprintf("h3=%d-%d\n", min, max))
++	}
++	if min, max := conf.GetH4(); min > 0 {
++		if max == 0 {
++			max = min
++		}
++		sb.WriteString(fmt.Sprintf("h4=%d-%d\n", min, max))
 +	}
 +	if val := conf.GetI1(); val != "" {
 +		sb.WriteString(fmt.Sprintf("i1=%s\n", val))
@@ -204,7 +227,45 @@ index 0a25c55bc..04666df4a 100644
 +	if val := conf.GetI5(); val != "" {
 +		sb.WriteString(fmt.Sprintf("i5=%s\n", val))
 +	}
-+
++	if min, max := conf.GetRekeyAfterTime(); min > 0 {
++		if max == 0 {
++			max = min
++		}
++		sb.WriteString(fmt.Sprintf("rekey_after_time=%d-%d\n", min, max))
++	}
++	if min, max := conf.GetRekeyTimeout(); min > 0 {
++		if max == 0 {
++			max = min
++		}
++		sb.WriteString(fmt.Sprintf("rekey_timeout=%d-%d\n", min, max))
++	}
++	if min, max := conf.GetRejectAfterTime(); min > 0 {
++		if max == 0 {
++			max = min
++		}
++		sb.WriteString(fmt.Sprintf("reject_after_time=%d-%d\n", min, max))
++	}
++	if min, max := conf.GetKeepaliveTimeout(); min > 0 {
++		if max == 0 {
++			max = min
++		}
++		sb.WriteString(fmt.Sprintf("keepalive_timeout=%d-%d\n", min, max))
++	}
++	if min, max := conf.GetMaxHandshakeAttempts(); min > 0 {
++		if max == 0 {
++			max = min
++		}
++		sb.WriteString(fmt.Sprintf("max_handshake_attempts=%d-%d\n", min, max))
++	}
++	if min, max := conf.GetContentPaddingAddition(); min > 0 {
++		if max == 0 {
++			max = min
++		}
++		sb.WriteString(fmt.Sprintf("content_padding_addition=%d-%d\n", min, max))
++	}
++	if val := conf.GetHeaderProtectionKey(); len(val) != 0 {
++		sb.WriteString(fmt.Sprintf("header_protection_key=%s\n", hex.EncodeToString(val[:])))
++	}
 +}
 +
  func toLastHandshake(stringVar string) (time.Time, error) {
@@ -553,10 +614,10 @@ index 2465130e6..68083309d 100644
  		}, nil
 diff --git a/client/internal/amneziawg/amneziawg.go b/client/internal/amneziawg/amneziawg.go
 new file mode 100644
-index 000000000..306cf395a
+index 000000000..49ec50bfb
 --- /dev/null
 +++ b/client/internal/amneziawg/amneziawg.go
-@@ -0,0 +1,110 @@
+@@ -0,0 +1,201 @@
 +package amneziawg
 +
 +import (
@@ -567,20 +628,39 @@ index 000000000..306cf395a
 +// AmneziaConfig describes AmneziaWG obfuscation parameters.
 +// If nil or all fields are zero, it behaves as standard WireGuard.
 +type AmneziaConfig struct {
-+	Jc   int32
-+	Jmin int32
-+	Jmax int32
-+	S1   int32
-+	S2   int32
-+	H1   uint32
-+	H2   uint32
-+	H3   uint32
-+	H4   uint32
-+	I1   string
-+	I2   string
-+	I3   string
-+	I4   string
-+	I5   string
++	Jc                        int32
++	Jmin                      int32
++	Jmax                      int32
++	S1                        int32
++	S2                        int32
++	S3                        uint32
++	S4                        uint32
++	H1Min                     uint32
++	H1Max                     uint32
++	H2Min                     uint32
++	H2Max                     uint32
++	H3Min                     uint32
++	H3Max                     uint32
++	H4Min                     uint32
++	H4Max                     uint32
++	I1                        string
++	I2                        string
++	I3                        string
++	I4                        string
++	I5                        string
++	RekeyAfterTimeMin         uint32
++	RekeyAfterTimeMax         uint32
++	RekeyTimeoutMin           uint32
++	RekeyTimeoutMax           uint32
++	RejectAfterTimeMin        uint32
++	RejectAfterTimeMax        uint32
++	KeepaliveTimeoutMin       uint32
++	KeepaliveTimeoutMax       uint32
++	MaxHandshakeAttemptsMin   uint32
++	MaxHandshakeAttemptsMax   uint32
++	ContentPaddingAdditionMin uint32
++	ContentPaddingAdditionMax uint32
++	HeaderProtectionKey       [32]byte
 +}
 +
 +func (cfg AmneziaConfig) IsEmpty() bool {
@@ -590,30 +670,72 @@ index 000000000..306cf395a
 +		cfg.Jmax == 0 &&
 +		cfg.S1 == 0 &&
 +		cfg.S2 == 0 &&
-+		cfg.H1 == 0 &&
-+		cfg.H2 == 0 &&
-+		cfg.H3 == 0 &&
-+		cfg.H4 == 0 &&
++		cfg.S3 == 0 &&
++		cfg.S4 == 0 &&
++		cfg.H1Min == 0 &&
++		cfg.H1Max == 0 &&
++		cfg.H2Min == 0 &&
++		cfg.H2Max == 0 &&
++		cfg.H3Min == 0 &&
++		cfg.H3Max == 0 &&
++		cfg.H4Min == 0 &&
++		cfg.H4Max == 0 &&
 +		cfg.I1 == "" &&
 +		cfg.I2 == "" &&
 +		cfg.I3 == "" &&
 +		cfg.I4 == "" &&
-+		cfg.I5 == ""
++		cfg.I5 == "" &&
++		cfg.RekeyAfterTimeMin == 0 &&
++		cfg.RekeyAfterTimeMax == 0 &&
++		cfg.RekeyTimeoutMin == 0 &&
++		cfg.RekeyTimeoutMax == 0 &&
++		cfg.RejectAfterTimeMin == 0 &&
++		cfg.RejectAfterTimeMax == 0 &&
++		cfg.KeepaliveTimeoutMin == 0 &&
++		cfg.KeepaliveTimeoutMax == 0 &&
++		cfg.MaxHandshakeAttemptsMin == 0 &&
++		cfg.MaxHandshakeAttemptsMax == 0 &&
++		cfg.ContentPaddingAdditionMin == 0 &&
++		cfg.ContentPaddingAdditionMax == 0 &&
++		cfg.HeaderProtectionKey == [32]byte{}
 +}
-+func (cfg AmneziaConfig) GetJc() int32   { return cfg.Jc }
-+func (cfg AmneziaConfig) GetJmin() int32 { return cfg.Jmin }
-+func (cfg AmneziaConfig) GetJmax() int32 { return cfg.Jmax }
-+func (cfg AmneziaConfig) GetS1() int32   { return cfg.S1 }
-+func (cfg AmneziaConfig) GetS2() int32   { return cfg.S2 }
-+func (cfg AmneziaConfig) GetH1() uint32  { return cfg.H1 }
-+func (cfg AmneziaConfig) GetH2() uint32  { return cfg.H2 }
-+func (cfg AmneziaConfig) GetH3() uint32  { return cfg.H3 }
-+func (cfg AmneziaConfig) GetH4() uint32  { return cfg.H4 }
-+func (cfg AmneziaConfig) GetI1() string  { return cfg.I1 }
-+func (cfg AmneziaConfig) GetI2() string  { return cfg.I2 }
-+func (cfg AmneziaConfig) GetI3() string  { return cfg.I3 }
-+func (cfg AmneziaConfig) GetI4() string  { return cfg.I4 }
-+func (cfg AmneziaConfig) GetI5() string  { return cfg.I5 }
++func (cfg AmneziaConfig) GetJc() int32            { return cfg.Jc }
++func (cfg AmneziaConfig) GetJmin() int32          { return cfg.Jmin }
++func (cfg AmneziaConfig) GetJmax() int32          { return cfg.Jmax }
++func (cfg AmneziaConfig) GetS1() int32            { return cfg.S1 }
++func (cfg AmneziaConfig) GetS2() int32            { return cfg.S2 }
++func (cfg AmneziaConfig) GetS3() uint32           { return cfg.S3 }
++func (cfg AmneziaConfig) GetS4() uint32           { return cfg.S4 }
++func (cfg AmneziaConfig) GetH1() (uint32, uint32) { return cfg.H1Min, cfg.H1Max }
++func (cfg AmneziaConfig) GetH2() (uint32, uint32) { return cfg.H2Min, cfg.H2Max }
++func (cfg AmneziaConfig) GetH3() (uint32, uint32) { return cfg.H3Min, cfg.H3Max }
++func (cfg AmneziaConfig) GetH4() (uint32, uint32) { return cfg.H4Min, cfg.H4Max }
++func (cfg AmneziaConfig) GetI1() string           { return cfg.I1 }
++func (cfg AmneziaConfig) GetI2() string           { return cfg.I2 }
++func (cfg AmneziaConfig) GetI3() string           { return cfg.I3 }
++func (cfg AmneziaConfig) GetI4() string           { return cfg.I4 }
++func (cfg AmneziaConfig) GetI5() string           { return cfg.I5 }
++func (cfg AmneziaConfig) GetRekeyAfterTime() (uint32, uint32) {
++	return cfg.RekeyAfterTimeMin, cfg.RekeyAfterTimeMax
++}
++func (cfg AmneziaConfig) GetRekeyTimeout() (uint32, uint32) {
++	return cfg.RekeyTimeoutMin, cfg.RekeyTimeoutMax
++}
++func (cfg AmneziaConfig) GetRejectAfterTime() (uint32, uint32) {
++	return cfg.RejectAfterTimeMin, cfg.RejectAfterTimeMax
++}
++func (cfg AmneziaConfig) GetKeepaliveTimeout() (uint32, uint32) {
++	return cfg.KeepaliveTimeoutMin, cfg.KeepaliveTimeoutMax
++}
++func (cfg AmneziaConfig) GetMaxHandshakeAttempts() (uint32, uint32) {
++	return cfg.MaxHandshakeAttemptsMin, cfg.MaxHandshakeAttemptsMax
++}
++func (cfg AmneziaConfig) GetContentPaddingAddition() (uint32, uint32) {
++	return cfg.ContentPaddingAdditionMin, cfg.ContentPaddingAdditionMax
++}
++func (cfg AmneziaConfig) GetHeaderProtectionKey() [32]byte {
++	return cfg.HeaderProtectionKey
++}
 +
 +func FromPeerConfig(peerConfig *mgmProto.PeerConfig) AmneziaConfig {
 +	if peerConfig == nil {
@@ -633,21 +755,51 @@ index 000000000..306cf395a
 +	}
 +
 +	return AmneziaConfig{
-+		Jc:   config.GetJc(),
-+		Jmin: config.GetJmin(),
-+		Jmax: config.GetJmax(),
-+		S1:   config.GetS1(),
-+		S2:   config.GetS2(),
-+		H1:   config.GetH1(),
-+		H2:   config.GetH2(),
-+		H3:   config.GetH3(),
-+		H4:   config.GetH4(),
-+		I1:   config.GetI1(),
-+		I2:   config.GetI2(),
-+		I3:   config.GetI3(),
-+		I4:   config.GetI4(),
-+		I5:   config.GetI5(),
++		Jc:                        config.GetJc(),
++		Jmin:                      config.GetJmin(),
++		Jmax:                      config.GetJmax(),
++		S1:                        config.GetS1(),
++		S2:                        config.GetS2(),
++		S3:                        config.GetS3(),
++		S4:                        config.GetS4(),
++		H1Min:                     config.GetH1Min(),
++		H1Max:                     config.GetH1Max(),
++		H2Min:                     config.GetH2Min(),
++		H2Max:                     config.GetH2Max(),
++		H3Min:                     config.GetH3Min(),
++		H3Max:                     config.GetH3Max(),
++		H4Min:                     config.GetH4Min(),
++		H4Max:                     config.GetH4Max(),
++		I1:                        config.GetI1(),
++		I2:                        config.GetI2(),
++		I3:                        config.GetI3(),
++		I4:                        config.GetI4(),
++		I5:                        config.GetI5(),
++		RekeyAfterTimeMin:         config.GetRekeyAfterTimeMin(),
++		RekeyAfterTimeMax:         config.GetRekeyAfterTimeMax(),
++		RekeyTimeoutMin:           config.GetRekeyTimeoutMin(),
++		RekeyTimeoutMax:           config.GetRekeyTimeoutMax(),
++		RejectAfterTimeMin:        config.GetRejectAfterTimeMin(),
++		RejectAfterTimeMax:        config.GetRejectAfterTimeMax(),
++		KeepaliveTimeoutMin:       config.GetKeepaliveTimeoutMin(),
++		KeepaliveTimeoutMax:       config.GetKeepaliveTimeoutMax(),
++		MaxHandshakeAttemptsMin:   config.GetMaxHandshakeAttemptsMin(),
++		MaxHandshakeAttemptsMax:   config.GetMaxHandshakeAttemptsMax(),
++		ContentPaddingAdditionMin: config.GetContentPaddingAdditionMin(),
++		ContentPaddingAdditionMax: config.GetContentPaddingAdditionMax(),
++		HeaderProtectionKey:       getHeaderProtectionKey(config),
 +	}
++}
++
++func getHeaderProtectionKey(config *mgmProto.AmneziaConfig) [32]byte {
++	key := config.GetHeaderProtectionKey()
++	if len(key) == 0 {
++		return [32]byte{}
++	}
++	if len(key) != 32 {
++		panic("Malformed header protection key")
++	}
++	return ([32]byte)(key)
 +}
 +
 +func fromLegacyField9(raw []byte) (AmneziaConfig, bool) {
@@ -668,7 +820,7 @@ index 000000000..306cf395a
 +	return cfg, true
 +}
 diff --git a/client/internal/connect.go b/client/internal/connect.go
-index f4d14aab2..b193291b9 100644
+index ceb39419e..3a75d6112 100644
 --- a/client/internal/connect.go
 +++ b/client/internal/connect.go
 @@ -15,6 +15,7 @@ import (
@@ -679,7 +831,7 @@ index f4d14aab2..b193291b9 100644
  	log "github.com/sirupsen/logrus"
  
  	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
-@@ -631,6 +632,13 @@ func createEngineConfig(key wgtypes.Key, config *profilemanager.Config, peerConf
+@@ -638,6 +639,13 @@ func createEngineConfig(key wgtypes.Key, config *profilemanager.Config, peerConf
  		ProfileConfig: config,
  	}
  
@@ -694,7 +846,7 @@ index f4d14aab2..b193291b9 100644
  		preSharedKey, err := wgtypes.ParseKey(config.PreSharedKey)
  		if err != nil {
 diff --git a/client/internal/engine.go b/client/internal/engine.go
-index e1b03e878..d789440fc 100644
+index f4f47992f..04d147f53 100644
 --- a/client/internal/engine.go
 +++ b/client/internal/engine.go
 @@ -17,6 +17,7 @@ import (
@@ -714,7 +866,7 @@ index e1b03e878..d789440fc 100644
  }
  
  // EngineServices holds the external service dependencies required by the Engine.
-@@ -1287,6 +1290,17 @@ func (e *Engine) updateConfig(conf *mgmProto.PeerConfig) error {
+@@ -1286,6 +1289,17 @@ func (e *Engine) updateConfig(conf *mgmProto.PeerConfig) error {
  		return ErrResetConnection
  	}
  
@@ -732,7 +884,7 @@ index e1b03e878..d789440fc 100644
  	if conf.GetSshConfig() != nil {
  		if err := e.updateSSH(conf.GetSshConfig()); err != nil {
  			log.Warnf("failed handling SSH server setup: %v", err)
-@@ -2139,13 +2153,14 @@ func (e *Engine) newWgIface() (*iface.WGIface, error) {
+@@ -2102,13 +2116,14 @@ func (e *Engine) newWgIface() (*iface.WGIface, error) {
  	}
  
  	opts := iface.WGIFaceOpts{
@@ -781,7 +933,7 @@ index 1c9c63f78..2ef517cc8 100644
    # Coturn
    coturn:
 diff --git a/management/Dockerfile.multistage b/management/Dockerfile.multistage
-index 619f84615..9ea0cd66b 100644
+index 619f84615..491c66ec3 100644
 --- a/management/Dockerfile.multistage
 +++ b/management/Dockerfile.multistage
 @@ -5,11 +5,13 @@ WORKDIR /app
@@ -789,18 +941,18 @@ index 619f84615..9ea0cd66b 100644
  
  COPY go.mod go.sum ./
 +COPY --from=amneziawg-go . /amneziawg-go
-+RUN go mod edit -replace=github.com/amnezia-vpn/amneziawg-go=/amneziawg-go
++RUN go mod edit -replace=github.com/amnezia-vpn/amneziawg-go/v3=/amneziawg-go
  RUN go mod download
  
  COPY . .
-+RUN go mod edit -replace=github.com/amnezia-vpn/amneziawg-go=/amneziawg-go
++RUN go mod edit -replace=github.com/amnezia-vpn/amneziawg-go/v3=/amneziawg-go
  RUN CGO_ENABLED=1 GOOS=linux go build -ldflags="-s -w" -o netbird-mgmt ./management
 -
  FROM ubuntu:24.04
  RUN apt update && apt install -y ca-certificates && rm -fr /var/cache/apt
  ENTRYPOINT [ "/go/bin/netbird-mgmt","management"]
 diff --git a/management/internals/shared/grpc/conversion.go b/management/internals/shared/grpc/conversion.go
-index 696d28f5c..14f762005 100644
+index 74ceb3370..c7c3abc2e 100644
 --- a/management/internals/shared/grpc/conversion.go
 +++ b/management/internals/shared/grpc/conversion.go
 @@ -10,6 +10,7 @@ import (
@@ -838,7 +990,7 @@ index 696d28f5c..14f762005 100644
  
  func init() {
  	constraint, err := version.NewConstraint(">= " + deprecatedRemotePeersVersion)
-@@ -41,6 +46,12 @@ func init() {
+@@ -41,6 +47,12 @@ func init() {
  		panic("parse deprecated remote peers version constraint: " + err.Error())
  	}
  	precomputedDeprecatedRemotePeersConstraint = constraint
@@ -851,31 +1003,50 @@ index 696d28f5c..14f762005 100644
  }
  
  // toNetbirdConfig converts the server configuration to the wire representation. It returns
-@@ -131,6 +142,23 @@ func toPeerConfig(peer *nbpeer.Peer, network *types.Network, dnsName string, set
+@@ -131,6 +143,42 @@ func toPeerConfig(peer *nbpeer.Peer, network *types.Network, dnsName string, set
  		sshConfig.JwtConfig = buildJWTConfig(httpConfig, deviceFlowConfig)
  	}
  
 +	amneziaConfig := &proto.AmneziaConfig{
-+		Jc:   &amneziawg.Store.Jc,
-+		Jmin: &amneziawg.Store.Jmin,
-+		Jmax: &amneziawg.Store.Jmax,
-+		S1:   &amneziawg.Store.S1,
-+		S2:   &amneziawg.Store.S2,
-+		H1:   &amneziawg.Store.H1,
-+		H2:   &amneziawg.Store.H2,
-+		H3:   &amneziawg.Store.H3,
-+		H4:   &amneziawg.Store.H4,
-+		I1:   &amneziawg.Store.I1,
-+		I2:   &amneziawg.Store.I2,
-+		I3:   &amneziawg.Store.I3,
-+		I4:   &amneziawg.Store.I4,
-+		I5:   &amneziawg.Store.I5,
++		Jc:                        &amneziawg.Store.Jc,
++		Jmin:                      &amneziawg.Store.Jmin,
++		Jmax:                      &amneziawg.Store.Jmax,
++		S1:                        &amneziawg.Store.S1,
++		S2:                        &amneziawg.Store.S2,
++		S3:                        &amneziawg.Store.S3,
++		S4:                        &amneziawg.Store.S4,
++		H1Min:                     &amneziawg.Store.H1Min,
++		H1Max:                     &amneziawg.Store.H1Max,
++		H2Min:                     &amneziawg.Store.H2Min,
++		H2Max:                     &amneziawg.Store.H2Max,
++		H3Min:                     &amneziawg.Store.H3Min,
++		H3Max:                     &amneziawg.Store.H3Max,
++		H4Min:                     &amneziawg.Store.H4Min,
++		H4Max:                     &amneziawg.Store.H4Max,
++		I1:                        &amneziawg.Store.I1,
++		I2:                        &amneziawg.Store.I2,
++		I3:                        &amneziawg.Store.I3,
++		I4:                        &amneziawg.Store.I4,
++		I5:                        &amneziawg.Store.I5,
++		RekeyAfterTimeMin:         &amneziawg.Store.RekeyAfterTimeMin,
++		RekeyAfterTimeMax:         &amneziawg.Store.RekeyAfterTimeMax,
++		RekeyTimeoutMin:           &amneziawg.Store.RekeyTimeoutMin,
++		RekeyTimeoutMax:           &amneziawg.Store.RekeyTimeoutMax,
++		RejectAfterTimeMin:        &amneziawg.Store.RejectAfterTimeMin,
++		RejectAfterTimeMax:        &amneziawg.Store.RejectAfterTimeMax,
++		KeepaliveTimeoutMin:       &amneziawg.Store.KeepaliveTimeoutMin,
++		KeepaliveTimeoutMax:       &amneziawg.Store.KeepaliveTimeoutMax,
++		MaxHandshakeAttemptsMin:   &amneziawg.Store.MaxHandshakeAttemptsMin,
++		MaxHandshakeAttemptsMax:   &amneziawg.Store.MaxHandshakeAttemptsMax,
++		ContentPaddingAdditionMin: &amneziawg.Store.ContentPaddingAdditionMin,
++		ContentPaddingAdditionMax: &amneziawg.Store.ContentPaddingAdditionMax,
++		HeaderProtectionKey:       amneziawg.Store.HeaderProtectionKey,
 +	}
 +
  	peerConfig := &proto.PeerConfig{
  		Address:                         fmt.Sprintf("%s/%d", peer.IP.String(), netmask),
  		SshConfig:                       sshConfig,
-@@ -141,6 +169,15 @@ func toPeerConfig(peer *nbpeer.Peer, network *types.Network, dnsName string, set
+@@ -141,6 +189,15 @@ func toPeerConfig(peer *nbpeer.Peer, network *types.Network, dnsName string, set
  			Version:      settings.AutoUpdateVersion,
  			AlwaysUpdate: settings.AutoUpdateAlways,
  		},
@@ -891,7 +1062,7 @@ index 696d28f5c..14f762005 100644
  	}
  
  	if peer.SupportsIPv6() && peer.IPv6.IsValid() && network.NetV6.IP != nil {
-@@ -154,6 +191,27 @@ func toPeerConfig(peer *nbpeer.Peer, network *types.Network, dnsName string, set
+@@ -154,6 +211,27 @@ func toPeerConfig(peer *nbpeer.Peer, network *types.Network, dnsName string, set
  	return peerConfig
  }
  
@@ -921,223 +1092,179 @@ index 696d28f5c..14f762005 100644
  	// whether the target peer supports IPv6. Routes and firewall rules are already
 diff --git a/management/server/amneziawg/amneziawg_env.go b/management/server/amneziawg/amneziawg_env.go
 new file mode 100644
-index 000000000..15320d0ea
+index 000000000..ee18d31c7
 --- /dev/null
 +++ b/management/server/amneziawg/amneziawg_env.go
-@@ -0,0 +1,211 @@
+@@ -0,0 +1,167 @@
 +package amneziawg
 +
 +import (
++	"encoding/base64"
 +	"os"
 +	"strconv"
++	"strings"
 +)
 +
 +const (
-+	envAmneziaJc   = "NETBIRD_AMNEZIA_JC"
-+	envAmneziaJmin = "NETBIRD_AMNEZIA_JMIN"
-+	envAmneziaJmax = "NETBIRD_AMNEZIA_JMAX"
-+	envAmneziaS1   = "NETBIRD_AMNEZIA_S1"
-+	envAmneziaS2   = "NETBIRD_AMNEZIA_S2"
-+	envAmneziaH1   = "NETBIRD_AMNEZIA_H1"
-+	envAmneziaH2   = "NETBIRD_AMNEZIA_H2"
-+	envAmneziaH3   = "NETBIRD_AMNEZIA_H3"
-+	envAmneziaH4   = "NETBIRD_AMNEZIA_H4"
-+	envAmneziaI1   = "NETBIRD_AMNEZIA_I1"
-+	envAmneziaI2   = "NETBIRD_AMNEZIA_I2"
-+	envAmneziaI3   = "NETBIRD_AMNEZIA_I3"
-+	envAmneziaI4   = "NETBIRD_AMNEZIA_I4"
-+	envAmneziaI5   = "NETBIRD_AMNEZIA_I5"
++	envAmneziaJc                     = "NETBIRD_AMNEZIA_JC"
++	envAmneziaJmin                   = "NETBIRD_AMNEZIA_JMIN"
++	envAmneziaJmax                   = "NETBIRD_AMNEZIA_JMAX"
++	envAmneziaS1                     = "NETBIRD_AMNEZIA_S1"
++	envAmneziaS2                     = "NETBIRD_AMNEZIA_S2"
++	envAmneziaS3                     = "NETBIRD_AMNEZIA_S3"
++	envAmneziaS4                     = "NETBIRD_AMNEZIA_S4"
++	envAmneziaH1                     = "NETBIRD_AMNEZIA_H1"
++	envAmneziaH2                     = "NETBIRD_AMNEZIA_H2"
++	envAmneziaH3                     = "NETBIRD_AMNEZIA_H3"
++	envAmneziaH4                     = "NETBIRD_AMNEZIA_H4"
++	envAmneziaI1                     = "NETBIRD_AMNEZIA_I1"
++	envAmneziaI2                     = "NETBIRD_AMNEZIA_I2"
++	envAmneziaI3                     = "NETBIRD_AMNEZIA_I3"
++	envAmneziaI4                     = "NETBIRD_AMNEZIA_I4"
++	envAmneziaI5                     = "NETBIRD_AMNEZIA_I5"
++	envAmneziaRekeyAfterTime         = "NETBIRD_AMNEZIA_REKEY_AFTER_TIME"
++	envAmneziaRekeyTimeout           = "NETBIRD_AMNEZIA_REKEY_TIMEOUT"
++	envAmneziaRejectAfterTime        = "NETBIRD_AMNEZIA_REJECT_AFTER_TIME"
++	envAmneziaKeepaliveTimeout       = "NETBIRD_AMNEZIA_KEEPALIVE_TIMEOUT"
++	envAmneziaMaxHandshakeAttempts   = "NETBIRD_AMNEZIA_MAX_HANDSHAKE_ATTEMPTS"
++	envAmneziaContentPaddingAddition = "NETBIRD_AMNEZIA_CONTENT_PADDING_ADDITION"
++	envAmneziaHeaderProtectionKey    = "NETBIRD_AMNEZIA_HEADER_PROTECTION_KEY"
 +)
 +
 +type StoreStruct struct {
-+	Jc   int32
-+	Jmin int32
-+	Jmax int32
-+	S1   int32
-+	S2   int32
-+	H1   uint32
-+	H2   uint32
-+	H3   uint32
-+	H4   uint32
-+	I1   string
-+	I2   string
-+	I3   string
-+	I4   string
-+	I5   string
++	Jc                        int32
++	Jmin                      int32
++	Jmax                      int32
++	S1                        int32
++	S2                        int32
++	S3                        uint32
++	S4                        uint32
++	H1Min                     uint32
++	H1Max                     uint32
++	H2Min                     uint32
++	H2Max                     uint32
++	H3Min                     uint32
++	H3Max                     uint32
++	H4Min                     uint32
++	H4Max                     uint32
++	I1                        string
++	I2                        string
++	I3                        string
++	I4                        string
++	I5                        string
++	RekeyAfterTimeMin         uint32
++	RekeyAfterTimeMax         uint32
++	RekeyTimeoutMin           uint32
++	RekeyTimeoutMax           uint32
++	RejectAfterTimeMin        uint32
++	RejectAfterTimeMax        uint32
++	KeepaliveTimeoutMin       uint32
++	KeepaliveTimeoutMax       uint32
++	MaxHandshakeAttemptsMin   uint32
++	MaxHandshakeAttemptsMax   uint32
++	ContentPaddingAdditionMin uint32
++	ContentPaddingAdditionMax uint32
++	HeaderProtectionKey       []byte
 +}
 +
 +var Store StoreStruct
 +
 +func init() {
-+
 +	Store = StoreStruct{
-+		Jc:   getAmneziaWgJc(),
-+		Jmin: getAmneziaWgJmin(),
-+		Jmax: getAmneziaWgJmax(),
-+		S1:   getAmneziaWgS1(),
-+		S2:   getAmneziaWgS2(),
-+		H1:   getAmneziaWgH1(),
-+		H2:   getAmneziaWgH2(),
-+		H3:   getAmneziaWgH3(),
-+		H4:   getAmneziaWgH4(),
-+		I1:   getAmneziaWgI1(),
-+		I2:   getAmneziaWgI2(),
-+		I3:   getAmneziaWgI3(),
-+		I4:   getAmneziaWgI4(),
-+		I5:   getAmneziaWgI5(),
++		Jc:                  getI32FromEnv(envAmneziaJc),
++		Jmin:                getI32FromEnv(envAmneziaJmin),
++		Jmax:                getI32FromEnv(envAmneziaJmax),
++		S1:                  getI32FromEnv(envAmneziaS1),
++		S2:                  getI32FromEnv(envAmneziaS2),
++		S3:                  getU32FromEnv(envAmneziaS3),
++		S4:                  getU32FromEnv(envAmneziaS4),
++		I1:                  getStrFromEnv(envAmneziaI1),
++		I2:                  getStrFromEnv(envAmneziaI2),
++		I3:                  getStrFromEnv(envAmneziaI3),
++		I4:                  getStrFromEnv(envAmneziaI4),
++		I5:                  getStrFromEnv(envAmneziaI5),
++		HeaderProtectionKey: getKeyFromEnv(envAmneziaHeaderProtectionKey),
 +	}
++
++	Store.H1Min, Store.H1Max = getU32RangeFromEnv(envAmneziaH1)
++	Store.H2Min, Store.H2Max = getU32RangeFromEnv(envAmneziaH2)
++	Store.H3Min, Store.H3Max = getU32RangeFromEnv(envAmneziaH3)
++	Store.H4Min, Store.H4Max = getU32RangeFromEnv(envAmneziaH4)
++	Store.RekeyAfterTimeMin, Store.RekeyAfterTimeMax = getU32RangeFromEnv(envAmneziaRekeyAfterTime)
++	Store.RekeyTimeoutMin, Store.RekeyTimeoutMax = getU32RangeFromEnv(envAmneziaRekeyTimeout)
++	Store.RejectAfterTimeMin, Store.RejectAfterTimeMax = getU32RangeFromEnv(envAmneziaRejectAfterTime)
++	Store.KeepaliveTimeoutMin, Store.KeepaliveTimeoutMax = getU32RangeFromEnv(envAmneziaKeepaliveTimeout)
++	Store.MaxHandshakeAttemptsMin, Store.MaxHandshakeAttemptsMax = getU32RangeFromEnv(envAmneziaMaxHandshakeAttempts)
++	Store.ContentPaddingAdditionMin, Store.ContentPaddingAdditionMax = getU32RangeFromEnv(envAmneziaContentPaddingAddition)
 +}
 +
-+func getAmneziaWgJc() int32 {
-+
-+	strval, ok := os.LookupEnv(envAmneziaJc)
-+	if !ok {
-+		return 0
-+	}
++func parseI64OrZero(strval string) int64 {
 +	val, err := strconv.ParseInt(strval, 10, 32)
 +	if err != nil {
 +		return 0
 +	}
-+	return int32(val)
++	return val
 +}
-+func getAmneziaWgJmin() int32 {
 +
-+	strval, ok := os.LookupEnv(envAmneziaJmin)
++func getI64FromEnv(name string) int64 {
++	val, ok := os.LookupEnv(name)
 +	if !ok {
 +		return 0
 +	}
-+	val, err := strconv.ParseInt(strval, 10, 32)
-+	if err != nil {
-+		return 0
-+	}
-+	return int32(val)
++	return parseI64OrZero(val)
 +}
-+func getAmneziaWgJmax() int32 {
 +
-+	strval, ok := os.LookupEnv(envAmneziaJmax)
-+	if !ok {
-+		return 0
-+	}
-+	val, err := strconv.ParseInt(strval, 10, 32)
-+	if err != nil {
-+		return 0
-+	}
-+	return int32(val)
++func getI32FromEnv(name string) int32 {
++	return int32(getI64FromEnv(name))
 +}
-+func getAmneziaWgS1() int32 {
 +
-+	strval, ok := os.LookupEnv(envAmneziaS1)
-+	if !ok {
-+		return 0
-+	}
-+	val, err := strconv.ParseInt(strval, 10, 32)
-+	if err != nil {
-+		return 0
-+	}
-+	return int32(val)
++func getU32FromEnv(name string) uint32 {
++	return uint32(getI64FromEnv(name))
 +}
-+func getAmneziaWgS2() int32 {
 +
-+	strval, ok := os.LookupEnv(envAmneziaS2)
-+	if !ok {
-+		return 0
-+	}
-+	val, err := strconv.ParseInt(strval, 10, 32)
-+	if err != nil {
-+		return 0
-+	}
-+	return int32(val)
-+}
-+func getAmneziaWgH1() uint32 {
-+
-+	strval, ok := os.LookupEnv(envAmneziaH1)
-+	if !ok {
-+		return 0
-+	}
-+	val, err := strconv.ParseUint(strval, 10, 32)
-+	if err != nil {
-+		return 0
-+	}
-+	return uint32(val)
-+}
-+func getAmneziaWgH2() uint32 {
-+
-+	strval, ok := os.LookupEnv(envAmneziaH2)
-+	if !ok {
-+		return 0
-+	}
-+	val, err := strconv.ParseUint(strval, 10, 32)
-+	if err != nil {
-+		return 0
-+	}
-+	return uint32(val)
-+}
-+func getAmneziaWgH3() uint32 {
-+
-+	strval, ok := os.LookupEnv(envAmneziaH3)
-+	if !ok {
-+		return 0
-+	}
-+	val, err := strconv.ParseUint(strval, 10, 32)
-+	if err != nil {
-+		return 0
-+	}
-+	return uint32(val)
-+}
-+func getAmneziaWgH4() uint32 {
-+
-+	strval, ok := os.LookupEnv(envAmneziaH4)
-+	if !ok {
-+		return 0
-+	}
-+	val, err := strconv.ParseUint(strval, 10, 32)
-+	if err != nil {
-+		return 0
-+	}
-+	return uint32(val)
-+}
-+func getAmneziaWgI1() string {
-+
-+	val, ok := os.LookupEnv(envAmneziaI1)
++func getStrFromEnv(name string) string {
++	val, ok := os.LookupEnv(name)
 +	if !ok {
 +		return ""
 +	}
 +	return val
 +}
-+func getAmneziaWgI2() string {
 +
-+	val, ok := os.LookupEnv(envAmneziaI2)
-+	if !ok {
-+		return ""
++func getKeyFromEnv(name string) []byte {
++	b64 := getStrFromEnv(name)
++	if b64 == "" {
++		return []byte{}
++	}
++	val, err := base64.StdEncoding.DecodeString(b64)
++	if err != nil {
++		return []byte{}
++	}
++	if len(val) != 32 {
++		return []byte{}
 +	}
 +	return val
 +}
-+func getAmneziaWgI3() string {
 +
-+	val, ok := os.LookupEnv(envAmneziaI3)
++func getI64RangeFromEnv(name string) (int64, int64) {
++	val, ok := os.LookupEnv(name)
 +	if !ok {
-+		return ""
++		return 0, 0
 +	}
-+	return val
++	left, right, found := strings.Cut(val, "-")
++
++	if found {
++		return parseI64OrZero(left), parseI64OrZero(right)
++	} else {
++		return parseI64OrZero(left), parseI64OrZero(left)
++	}
 +}
-+func getAmneziaWgI4() string {
 +
-+	val, ok := os.LookupEnv(envAmneziaI4)
-+	if !ok {
-+		return ""
-+	}
-+	return val
-+}
-+func getAmneziaWgI5() string {
-+
-+	val, ok := os.LookupEnv(envAmneziaI5)
-+	if !ok {
-+		return ""
-+	}
-+	return val
++func getU32RangeFromEnv(name string) (uint32, uint32) {
++	left, right := getI64RangeFromEnv(name)
++	return uint32(left), uint32(right)
 +}
 diff --git a/shared/management/proto/management.proto b/shared/management/proto/management.proto
-index 598f7a579..ac9fb520a 100644
+index 598f7a579..3648f77d6 100644
 --- a/shared/management/proto/management.proto
 +++ b/shared/management/proto/management.proto
 @@ -411,6 +411,9 @@ message PeerConfig {
@@ -1150,7 +1277,7 @@ index 598f7a579..ac9fb520a 100644
  }
  
  message AutoUpdateSettings {
-@@ -1207,3 +1210,36 @@ message UserIDList {
+@@ -1207,3 +1210,69 @@ message UserIDList {
  message PeerIndexSet {
    repeated uint32 peer_indexes = 1;
  }
@@ -1169,13 +1296,13 @@ index 598f7a579..ac9fb520a 100644
 +  // Response packet junk size
 +  optional int32 s2 = 5;
 +  // Init packet magic header 1
-+  optional uint32 h1 = 6;
++  optional uint32 h1_min = 6;
 +  // Init packet magic header 2
-+  optional uint32 h2 = 7;
++  optional uint32 h2_min = 7;
 +  // Init packet magic header 3
-+  optional uint32 h3 = 8;
++  optional uint32 h3_min = 8;
 +  // Init packet magic header 4
-+  optional uint32 h4 = 9;
++  optional uint32 h4_min = 9;
 +  // Init packet magic string 1
 +  optional string i1 = 10;
 +  // Init packet magic string 2
@@ -1186,4 +1313,37 @@ index 598f7a579..ac9fb520a 100644
 +  optional string i4 = 13;
 +  // Init packet magic string 5
 +  optional string i5 = 14;
++
++  // H1-H4 range support
++  optional uint32 h1_max = 15;
++  optional uint32 h2_max = 16;
++  optional uint32 h3_max = 17;
++  optional uint32 h4_max = 18;
++
++  // Cookie packet junk size
++  optional uint32 s3 = 19;
++  // Transport message junk size
++  optional uint32 s4 = 20;
++
++  // AWG3 timing obfuscation
++  // These are all actually uint16
++  optional uint32 rekey_after_time_min = 21;
++  optional uint32 rekey_after_time_max = 22;
++  optional uint32 rekey_timeout_min = 23;
++  optional uint32 rekey_timeout_max = 24;
++  optional uint32 reject_after_time_min = 25;
++  optional uint32 reject_after_time_max = 26;
++  optional uint32 keepalive_timeout_min = 27;
++  optional uint32 keepalive_timeout_max = 28;
++  optional uint32 max_handshake_attempts_min = 29;
++  optional uint32 max_handshake_attempts_max = 30;
++  // keepalive not used with lazy connections
++
++  // AWG3 content padding
++  // These are also actually uint16
++  optional uint32 content_padding_addition_min = 31;
++  optional uint32 content_padding_addition_max = 32;
++
++  // AWG3 header protection
++  optional bytes header_protection_key = 33;
 +}
